@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import Control.Evolution
 
 main :: IO ()
-main = someFunc
+main = putStrLn "ok"

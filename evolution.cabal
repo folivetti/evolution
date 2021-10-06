@@ -25,7 +25,7 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
+      Control.Evolution
   other-modules:
       Paths_evolution
   hs-source-dirs:
