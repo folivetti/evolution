@@ -24,11 +24,28 @@ class SolutionBuilder sb where
   _createSolution :: Solution a => sb -> Rnd a
 -}
 
-data Reproduction = Generational | KeepBest | ReplaceWorst | Probabilistic Selection
-data Selection = Tournament Int | RouletteWheel | SUS
-data Crossover = OnePoint | NPoints Int
-data Mutation = SwapTree | InsertVar
-data Predicate = Feasible | Infeasible
+data Reproduction = Generational 
+                  | KeepBest 
+                  | ReplaceWorst 
+                  | Probabilistic Selection
+                  deriving (Show, Read)
+
+data Selection = Tournament Int 
+               | RouletteWheel 
+               | SUS
+               deriving (Show, Read)
+
+data Crossover = OnePoint 
+               | NPoints Int
+               deriving (Show, Read)
+
+data Mutation = SwapTree 
+              | InsertVar
+              deriving (Show, Read)
+
+data Predicate = Feasible 
+               | Infeasible
+               deriving (Show, Read)
 
 -- | DSL of an evolutionary process
 data Evolution = Reproduce Reproduction Evolution Evolution
@@ -36,3 +53,4 @@ data Evolution = Reproduce Reproduction Evolution Evolution
                | Mutate Mutation Evolution
                | Filter Predicate Evolution
                | End
+               deriving (Show, Read)
