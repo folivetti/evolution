@@ -76,15 +76,17 @@ evalCycle :: Solution a
           -> a
           -> ReaderT (Interpreter a) (StateT StdGen IO) a
 evalCycle End pop p  = pure p
+
 evalCycle (Cross cx nParents pc sel evo) pop p = do
-  prob <- lift randomDbl
-  cxf  <- asks _cx
-  self <- asks _select
-  parents <- lift $ replicateM nParents (self sel pop)
-  child <- if prob < pc
+  prob    <- lift randomDbl
+  cxf     <- asks _cx
+  choose  <- asks _select
+  parents <- lift $ replicateM nParents (choose sel pop)
+  child   <- if prob < pc
               then lift $ cxf cx parents >>= _evaluate
               else pure $ head parents
   evalCycle evo pop child
+
 evalCycle (Mutate mut pm evo) pop p = do
   prob  <- lift randomDbl
   mutf  <- asks _mut
@@ -107,16 +109,18 @@ evalEvo (Reproduce rep pred1 evo1 pred2 evo2) pop gs = do
   (pop2, gs2)  <- case evo2 of
                     End -> pure (keeper pred2 pop, gs1)
                     _   -> runPar evo2 config gs1 (keeper pred2 pop)
-  rFun <- asks _reproduce
-  pop' <- lift $ rFun rep pop1 pop2
+  repFun <- asks _reproduce
+  pop' <- lift $ repFun rep pop1 pop2
   return (pop', gs2)
     where
-      runPar evo cfg g pop' = do
-        response <- liftIO $ traverseConcurrently (ParN 0) (runCycle evo cfg pop') $ zip (V.toList pop') g
-        pure $ splitResponse response ([], [])
+      runPar evo cfg g pop' = splitResponse
+                            $ traverseConcurrently (ParN 0) (runCycle evo cfg pop') 
+                            $ zip (V.toList pop') g
 
-      splitResponse [] (accP, accG)           = (V.fromList accP, accG)
-      splitResponse ((p, g):pgs) (accP, accG) = splitResponse pgs (p:accP, g:accG)
+      splitResponse = fmap (go ([], [])) . liftIO 
+        where
+          go (accP, accG) []          = (V.fromList accP, accG)
+          go (accP, accG) ((p,g):pgs) = go (p:accP, g:accG) pgs
 
       runCycle evo conf pop' (ix, g) = flip runStateT g $ runReaderT (evalCycle evo pop' ix) conf
 
@@ -129,10 +133,9 @@ genEvolution :: Solution a
 genEvolution nGens nPop logger evo = do
   createSol <- asks _create
   pop0      <- lift $ V.replicateM nPop (createSol >>= _evaluate)
-  liftIO $ logger pop0
   g         <- lift get
-  let gens = splitGensWithIndex nPop g
-  go nGens pop0 ([avgFit pop0], V.minimum pop0) gens
+  liftIO $ logger pop0
+  go nGens pop0 ([avgFit pop0], V.minimum pop0) $ splitGensWithIndex nPop g 
     where
       go 0 _   (avgs, best) gs = return (reverse avgs, best)
       go n pop (avgs, best) gs = do (pop', gs') <- evalEvo evo pop gs
