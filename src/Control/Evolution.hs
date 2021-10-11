@@ -1,23 +1,52 @@
-module Control.Evolution where
+module Control.Evolution 
+  ( runEvolution
+  , Rnd(..)
+  , Population(..)
+  , Solution(..)
+  , Interpreter(..)
+  , Reproduction(..)
+  , Selection(..)
+  , Crossover(..)
+  , Mutation(..)
+  , Predicate(..)
+  , Evolution(..)
+  , EvoCycle(..)
+  )
+  where
 
-import Control.Monad.State.Strict
-import Control.Monad.Reader
-import System.Random
-import Data.Monoid (Sum(..))
-import Data.Vector (Vector(..), (!))
-import qualified Data.Vector as V
-import Control.Scheduler                 (traverseConcurrently, Comp(..))
 import Control.DeepSeq                   (force)
+import Control.Monad.Reader
+import Control.Monad.State.Strict
+import Control.Scheduler                 (traverseConcurrently, Comp(..))
+import System.Random
+import Data.Monoid                       (Sum(..))
+import Data.Vector                       (Vector(..), (!))
+import qualified Data.Vector             as V
 
-type Rnd a = StateT StdGen IO a
+-- | A random element is the state monad with StdGen as a state
+type Rnd a        = StateT StdGen IO a
 
+-- | A population of solutions is a vector 
 type Population a = Vector a
 
+-- | A Solution class must implement a function to 
+-- evaluate this solution, a function to retrieve its fitness
+-- and another function to check the feasibility of the solution.
+--
+-- The evaluation function is inside the state monad as it may
+-- need to sample some instances to evaluate (i.e., lexicase selection).
 class Ord a => Solution a where
   _evaluate   :: a -> Rnd a
   _getFitness :: a -> Double
   _isFeasible :: a -> Bool
 
+-- | The `Interpreter` data type stores all the necessary functions
+-- for the evolution process. Each of these functions should
+-- receive the type of operation as the first parameter and throw an error
+-- in case an operator is unsupported:
+--
+-- `_cx OnePoint pop = myOnePoint pop`
+-- `_cx NPoints  pop = error "NPoints crossover not implemented for this algorithm"`
 data Interpreter a = Funs { _cx        :: Crossover -> [a] -> Rnd a
                           , _mut       :: Mutation -> a -> Rnd a
                           , _reproduce :: Reproduction -> Population a -> Population a -> Rnd (Population a)
@@ -26,6 +55,13 @@ data Interpreter a = Funs { _cx        :: Crossover -> [a] -> Rnd a
                           , _create    :: Rnd a
                           } 
 
+-- | Reproduction algorithms
+--
+-- * Generational: the children replaces the parent population
+-- * KeepBest: generational but keeping the best individual (either from parent or child population)
+-- * ReplaceWorst: replaces the worst individuals with new random solutions or sampled solutions from the parent
+-- * Probabilistic: sample individuals from the combined parent+child populations using a Selection strategy
+-- * CustomReproduction1/2: custom reproduction strategies not covered by this data type 
 data Reproduction = Generational 
                   | KeepBest 
                   | ReplaceWorst 
@@ -34,6 +70,12 @@ data Reproduction = Generational
                   | CustomReproduction2
                   deriving (Show, Read)
 
+-- | Selection algorithms
+--
+-- * Tournament: tournament selection, samples n solutions and returns the best
+-- * RouletteWheel: roulette wheel, calculates the probability of choosing an individual proportional to its fitness and sample an individual using this probability distribution
+-- * SUS: similar to roulette wheel, but samples the entire population at once by using multiple evenly spaced arrows with the wheel
+-- * CustomSelection1/2: custom selection strategies not covered by this data type 
 data Selection = Tournament Int 
                | RouletteWheel 
                | SUS
@@ -41,27 +83,68 @@ data Selection = Tournament Int
                | CustomSelection2
                deriving (Show, Read)
 
+-- | Crossover algorithms
+--
+-- * OnePoint: one-point crossover, exchange chromossome material on a single point
+-- * NPoints: n-points crossover, exchange chromossome material on a n points
+-- * CustomCX1/2: custom crossover strategies not covered by this data type 
 data Crossover = OnePoint 
                | NPoints Int
                | CustomCX1
                | CustomCX2
                deriving (Show, Read)
 
+-- | Mutation algorithms
+--
+-- * SwapTree: swap two branches of an expression tree (GP)
+-- * InsertVar: inserts a variable into an expression tree (GP)
+-- * LocalSearch: applies a local search strategy
+-- * Uniform: changes each element with probability associated with the mutation 
+-- * CustomMut1/2: custom mutation strategies not covered by this data type 
 data Mutation = SwapTree 
               | InsertVar
+              | LocalSearch
+              | Uniform 
               | CustomMut1
               | CustomMut2
               deriving (Show, Read)
 
+-- | Predicate for population filter 
+--
+-- * Feasible: selects only the feasible solutions
+-- * Infeasible: selects only the infeasible solutions
+-- * All: selects the entire population
 data Predicate = Feasible 
                | Infeasible
                | All
                deriving (Show, Read)
 
 -- | DSL of an evolutionary process
+--
+-- The evolutionary process is composed of a reproduction strategy between 
+-- two evolutionary cycles applied to a filtered population.
 data Evolution = Reproduce Reproduction Predicate EvoCycle Predicate EvoCycle
   deriving (Show, Read)
 
+-- | An evolution cycle is composed of a sequence of
+-- crossover and mutation operations. The order and quantity of each operation 
+-- is arbitrary.
+--
+-- * Cross: applies a `Crossover` operator to `n` individuals with `p` probability
+--          and sampling individuals using `Selection` strategy
+-- * Mutate: applies a `Mutation` operator with probability `p`
+--
+-- Common evolution cycle: 
+--
+-- Cross OnePoint 2 0.8 (Tournament 2) 
+--      (Mutate SwapTree 0.2 End)
+--
+-- With Local Search: 
+--
+-- Cross OnePoint 2 0.8 (Tournament 2) 
+--      (Mutate SwapTree 0.2
+--         (Mutate LocalSearch 1.0 End))
+--
 data EvoCycle = Cross Crossover Int Double Selection EvoCycle
               | Mutate Mutation Double EvoCycle
               | End
@@ -70,6 +153,10 @@ data EvoCycle = Cross Crossover Int Double Selection EvoCycle
 randomDbl :: StateT StdGen IO Double
 randomDbl = state (randomR (0.0, 1.0))
 
+-- | Evaluates an evolution cycle.
+-- Each step involves the immutable population as a context
+-- and an individual as focus.
+-- By the end of the cycle, a single individual will be created.
 evalCycle :: Solution a 
           => EvoCycle
           -> Population a
@@ -95,6 +182,12 @@ evalCycle (Mutate mut pm evo) pop p = do
               else pure p
   evalCycle evo pop child
 
+-- | Evaluates the evolution process in parallel
+-- The evolution process generates two branches with each
+-- branch generating a population. After that, it apples the
+-- reproduction strategy to generate the next population.
+-- Each individual of the new populations are generated in parallel 
+-- using the evolution cycle. 
 evalEvo :: Solution a 
         => Evolution 
         -> Population a 
@@ -124,6 +217,7 @@ evalEvo (Reproduce rep pred1 evo1 pred2 evo2) pop gs = do
 
       runCycle evo conf pop' (ix, g) = flip runStateT g $ runReaderT (evalCycle evo pop' ix) conf
 
+-- | Generates the evolutionary process to be evaluated using `runEvolution`
 genEvolution :: Solution a
              => Int 
              -> Int 
@@ -144,14 +238,15 @@ genEvolution nGens nPop logger evo = do
                                         best' = getBest best pop'
                                     go (n-1) pop' (avgs', best') gs'
 
-runEvolution :: Solution a 
-             => Int
-             -> Int
-             -> (Population a -> IO ())
-             -> Evolution
-             -> StdGen
-             -> Interpreter a
-             -> IO ([Double], a)
+-- | Runs the evolutionary process 
+runEvolution :: Solution a                 -- ^ for a type `a` representing a solution 
+             => Int                        -- ^ number of generations 
+             -> Int                        -- ^ population size
+             -> (Population a -> IO ())    -- ^ a logger function to run at every generation 
+             -> Evolution                  -- ^ Evolutionary process 
+             -> StdGen                     -- ^ random number generator
+             -> Interpreter a              -- ^ Interpreter of evolutionary process 
+             -> IO ([Double], a)           -- ^ returns the average fitness of every generation and the final champion
 runEvolution nGens nPop logger evo g = flip evalStateT g . runReaderT (genEvolution nGens nPop logger evo)
 
 
