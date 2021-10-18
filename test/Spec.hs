@@ -14,12 +14,13 @@ instance Ord Test where
   t1 <= t2 = _fit t1 <= _fit t2
 
 instance Solution Test where
-  _evaluate t = pure $ t{ _fit = sum (_chromo t) }
   _getFitness = _fit 
   _isFeasible = (==0) . _feasible
 
 toss :: StateT StdGen IO Bool
 toss = state random
+  
+calcFitness t = pure $ t{ _fit = sum (_chromo t) }
 
 testCreate = do
   b1 <- state random
@@ -56,7 +57,7 @@ testReproduce _ p1 p2 = do
   pure p2
 
 interpret :: Interpreter Test
-interpret = Funs testCX testMut testReproduce testSelect (\_ xs -> xs) testCreate
+interpret = Funs testCX testMut testReproduce testSelect (\_ xs -> xs) testCreate calcFitness
 
 evo = Reproduce Generational 
         All End

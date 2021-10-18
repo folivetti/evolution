@@ -36,7 +36,6 @@ type Population a = Vector a
 -- The evaluation function is inside the state monad as it may
 -- need to sample some instances to evaluate (i.e., lexicase selection).
 class Ord a => Solution a where
-  _evaluate   :: a -> Rnd a
   _getFitness :: a -> Double
   _isFeasible :: a -> Bool
 
@@ -53,6 +52,7 @@ data Interpreter a = Funs { _cx        :: Crossover -> [a] -> Rnd a
                           , _select    :: Selection -> Population a -> Rnd a
                           , _filter    :: Predicate -> Population a -> Population a
                           , _create    :: Rnd a
+                          , _evaluate  :: a -> Rnd a
                           } 
 
 -- | Reproduction algorithms
@@ -102,13 +102,17 @@ data Crossover = OnePoint
 -- * Uniform: changes each element with probability associated with the mutation 
 -- * CustomMut1/2: custom mutation strategies not covered by this data type 
 data Mutation = SwapTree 
-              | InsertVar
+              | InsertNode -- Var/Term
+              | RemoveNode -- Var/Term
+              | ChangeNode -- Var/Function/Exponent
+              | ReplaceSubTree
+              | GroupMutation -- choose from one of the mutation operators
               | LocalSearch
               | Uniform 
               | CustomMut1
               | CustomMut2
               deriving (Show, Read)
-
+                  
 -- | Predicate for population filter 
 --
 -- * Feasible: selects only the feasible solutions
@@ -168,17 +172,19 @@ evalCycle (Cross cx nParents pc sel evo) pop p = do
   prob    <- lift randomDbl
   cxf     <- asks _cx
   choose  <- asks _select
+  eval    <- asks _evaluate 
   parents <- lift $ replicateM nParents (choose sel pop)
   child   <- if prob < pc
-              then lift $ cxf cx parents >>= _evaluate
+              then lift $ cxf cx parents >>= eval
               else pure $ head parents
   evalCycle evo pop child
 
 evalCycle (Mutate mut pm evo) pop p = do
   prob  <- lift randomDbl
   mutf  <- asks _mut
+  eval  <- asks _evaluate
   child <- if prob < pm
-              then lift $ mutf mut p >>= _evaluate
+              then lift $ mutf mut p >>= eval
               else pure p
   evalCycle evo pop child
 
@@ -226,7 +232,8 @@ genEvolution :: Solution a
              -> ReaderT (Interpreter a) (StateT StdGen IO) ([Double], a)
 genEvolution nGens nPop logger evo = do
   createSol <- asks _create
-  pop0      <- lift $ V.replicateM nPop (createSol >>= _evaluate)
+  eval      <- asks _evaluate 
+  pop0      <- lift $ V.replicateM nPop (createSol >>= eval)
   g         <- lift get
   liftIO $ logger pop0
   go nGens pop0 ([avgFit pop0], V.minimum pop0) $ splitGensWithIndex nPop g 
