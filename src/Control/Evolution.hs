@@ -223,7 +223,7 @@ evalEvo (Reproduce rep pred1 evo1 pred2 evo2) pop gs = do
           go (accP, accG) []          = (V.fromList accP, accG)
           go (accP, accG) ((p,g):pgs) = go (p:accP, g:accG) pgs
 
-      runCycle evo conf pop' (ix, g) = runStateT (runReaderT (evalCycle evo pop' ix) conf) g
+      runCycle evo conf pop' (ix, g) = force <$> runStateT (runReaderT (evalCycle evo pop' ix) conf) g
 
 -- | Generates the evolutionary process to be evaluated using `runEvolution`
 genEvolution :: (Solution a, NFData a)
