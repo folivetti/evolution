@@ -14,7 +14,7 @@ module Control.Evolution
   )
   where
 
-import Control.DeepSeq                   (force)
+import Control.DeepSeq                   (force, NFData)
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Control.Scheduler                 (traverseConcurrently, Comp(..))
@@ -194,7 +194,7 @@ evalCycle (Mutate mut pm evo) pop p = do
 -- reproduction strategy to generate the next population.
 -- Each individual of the new populations are generated in parallel 
 -- using the evolution cycle. 
-evalEvo :: Solution a 
+evalEvo :: (Solution a, NFData a)
         => Evolution 
         -> Population a 
         -> [StdGen]
@@ -221,10 +221,10 @@ evalEvo (Reproduce rep pred1 evo1 pred2 evo2) pop gs = do
           go (accP, accG) []          = (V.fromList accP, accG)
           go (accP, accG) ((p,g):pgs) = go (p:accP, g:accG) pgs
 
-      runCycle evo conf pop' (ix, g) = flip runStateT g $ runReaderT (evalCycle evo pop' ix) conf
+      runCycle evo conf pop' (ix, g) = force <$> (flip runStateT g $ runReaderT (evalCycle evo pop' ix) conf)
 
 -- | Generates the evolutionary process to be evaluated using `runEvolution`
-genEvolution :: Solution a
+genEvolution :: (Solution a, NFData a)
              => Int 
              -> Int 
              -> (Population a -> IO ()) 
@@ -241,12 +241,12 @@ genEvolution nGens nPop logger evo = do
       go 0 _   (avgs, best) gs = return (reverse avgs, best)
       go n pop (avgs, best) gs = do (pop', gs') <- evalEvo evo pop gs
                                     liftIO $ logger pop'
-                                    let avgs' = avgFit pop' : avgs
+                                    let avgs' = force $ avgFit pop' : avgs
                                         best' = getBest best pop'
                                     go (n-1) pop' (avgs', best') gs'
 
 -- | Runs the evolutionary process 
-runEvolution :: Solution a                 -- ^ for a type `a` representing a solution 
+runEvolution :: (Solution a, NFData a)     -- ^ for a type `a` representing a solution 
              => Int                        -- ^ number of generations 
              -> Int                        -- ^ population size
              -> (Population a -> IO ())    -- ^ a logger function to run at every generation 
