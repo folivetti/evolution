@@ -177,7 +177,7 @@ evalCycle (Cross cx nParents pc sel evo) pop p = do
   eval    <- asks _evaluate 
   parents <- lift $ replicateM nParents (choose sel pop)
   child   <- if prob < pc
-              then lift $ force <$> (cxf cx parents >>= eval)
+              then lift $ (cxf cx parents >>= eval)
               else pure $ head parents
   evalCycle evo pop child
 
@@ -186,7 +186,7 @@ evalCycle (Mutate mut pm evo) pop p = do
   mutf  <- asks _mut
   eval  <- asks _evaluate
   child <- if prob < pm
-              then lift $ force <$> (mutf mut p >>= eval)
+              then lift $ (mutf mut p >>= eval)
               else pure p
   evalCycle evo pop child
 
@@ -223,7 +223,7 @@ evalEvo (Reproduce rep pred1 evo1 pred2 evo2) pop gs = do
           go (accP, accG) []          = (V.fromList accP, accG)
           go (accP, accG) ((p,g):pgs) = go (p:accP, g:accG) pgs
 
-      runCycle evo conf pop' (ix, g) = force <$> runStateT (runReaderT (evalCycle evo pop' ix) conf) g
+      runCycle evo conf pop' (ix, g) = runStateT (runReaderT (evalCycle evo pop' ix) conf) g
 
 -- | Generates the evolutionary process to be evaluated using `runEvolution`
 genEvolution :: (Solution a, NFData a)
@@ -243,7 +243,7 @@ genEvolution nGens nPop logger evo = do
       go 0 _   (!avgs, !best) gs = return (reverse avgs, best)
       go n pop (!avgs, !best) gs = do (pop', gs') <- evalEvo evo pop gs
                                       liftIO $ logger pop'
-                                      let avgs' = force $ avgFit pop' : avgs
+                                      let avgs' = avgFit pop' : avgs
                                           best' = getBest best pop'
                                       go (n-1) pop' (avgs', best') gs'
 
