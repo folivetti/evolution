@@ -161,7 +161,7 @@ randomDbl = state (randomR (0.0, 1.0))
 -- Each step involves the immutable population as a context
 -- and an individual as focus.
 -- By the end of the cycle, a single individual will be created.
-evalCycle :: Solution a 
+evalCycle :: (Solution a, NFData a)
           => EvoCycle
           -> Population a
           -> a
@@ -175,7 +175,7 @@ evalCycle (Cross cx nParents pc sel evo) pop p = do
   eval    <- asks _evaluate 
   parents <- lift $ replicateM nParents (choose sel pop)
   child   <- if prob < pc
-              then lift $ cxf cx parents >>= eval
+              then lift $ force <$> (cxf cx parents >>= eval)
               else pure $ head parents
   evalCycle evo pop child
 
@@ -184,7 +184,7 @@ evalCycle (Mutate mut pm evo) pop p = do
   mutf  <- asks _mut
   eval  <- asks _evaluate
   child <- if prob < pm
-              then lift $ mutf mut p >>= eval
+              then lift $ force <$> (mutf mut p >>= eval)
               else pure p
   evalCycle evo pop child
 
@@ -221,7 +221,7 @@ evalEvo (Reproduce rep pred1 evo1 pred2 evo2) pop gs = do
           go (accP, accG) []          = (V.fromList accP, accG)
           go (accP, accG) ((p,g):pgs) = go (p:accP, g:accG) pgs
 
-      runCycle evo conf pop' (ix, g) = force <$> (flip runStateT g $ runReaderT (evalCycle evo pop' ix) conf)
+      runCycle evo conf pop' (ix, g) = force <$> runStateT (runReaderT (evalCycle evo pop' ix) conf) g
 
 -- | Generates the evolutionary process to be evaluated using `runEvolution`
 genEvolution :: (Solution a, NFData a)
