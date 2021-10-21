@@ -1,3 +1,5 @@
+{-# language BangPatterns #-}
+
 module Control.Evolution 
   ( runEvolution
   , Rnd(..)
@@ -238,12 +240,12 @@ genEvolution nGens nPop logger evo = do
   liftIO $ logger pop0
   go nGens pop0 ([avgFit pop0], V.minimum pop0) $ splitGensWithIndex nPop g 
     where
-      go 0 _   (avgs, best) gs = return (reverse avgs, best)
-      go n pop (avgs, best) gs = do (pop', gs') <- evalEvo evo pop gs
-                                    liftIO $ logger pop'
-                                    let avgs' = force $ avgFit pop' : avgs
-                                        best' = getBest best pop'
-                                    go (n-1) pop' (avgs', best') gs'
+      go 0 _   (!avgs, !best) gs = return (reverse avgs, best)
+      go n pop (!avgs, !best) gs = do (pop', gs') <- evalEvo evo pop gs
+                                      liftIO $ logger pop'
+                                      let avgs' = force $ avgFit pop' : avgs
+                                          best' = getBest best pop'
+                                      go (n-1) pop' (avgs', best') gs'
 
 -- | Runs the evolutionary process 
 runEvolution :: (Solution a, NFData a)     -- ^ for a type `a` representing a solution 
