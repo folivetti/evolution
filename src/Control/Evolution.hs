@@ -170,7 +170,7 @@ evalCycle :: (Solution a, NFData a)
           -> ReaderT (Interpreter a) (StateT StdGen IO) a
 evalCycle End pop p  = pure p
 
-evalCycle (Cross cx nParents pc sel evo) pop p = do
+evalCycle (Cross cx nParents pc sel evo) pop !p = do
   prob    <- lift randomDbl
   cxf     <- asks _cx
   choose  <- asks _select
@@ -181,7 +181,7 @@ evalCycle (Cross cx nParents pc sel evo) pop p = do
               else pure $ head parents
   evalCycle evo pop child
 
-evalCycle (Mutate mut pm evo) pop p = do
+evalCycle (Mutate mut pm evo) pop !p = do
   prob  <- lift randomDbl
   mutf  <- asks _mut
   eval  <- asks _evaluate
@@ -223,7 +223,7 @@ evalEvo (Reproduce rep pred1 evo1 pred2 evo2) pop gs = do
           go (accP, accG) []          = (V.fromList accP, accG)
           go (accP, accG) ((p,g):pgs) = go (p:accP, g:accG) pgs
 
-      runCycle evo conf pop' (ix, g) = force <$> runStateT (runReaderT (evalCycle evo pop' ix) conf) g
+      runCycle evo conf pop' (ix, g) = runStateT (runReaderT (evalCycle evo pop' ix) conf) g
 
 -- | Generates the evolutionary process to be evaluated using `runEvolution`
 genEvolution :: (Solution a, NFData a)
