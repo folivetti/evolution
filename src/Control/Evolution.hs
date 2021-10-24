@@ -243,7 +243,7 @@ genEvolution nGens nPop logger evo = do
       go 0 _   (!avgs, !best) gs = return (reverse avgs, best)
       go n pop (!avgs, !best) gs = do (pop', gs') <- evalEvo evo pop gs
                                       liftIO $ logger pop'
-                                      let avgs' = avgFit pop' : avgs
+                                      let avgs' = force $ avgFit pop' : avgs
                                           best' = getBest best pop'
                                       go (n-1) pop' (avgs', best') gs'
 
