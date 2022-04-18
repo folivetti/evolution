@@ -1,8 +1,14 @@
 {-# language BangPatterns #-}
+{-# language TypeFamilies #-}
+{-# language FlexibleContexts #-}
+{-# language PolyKinds #-}
+{-# language GADTs #-}
+{-# language StandaloneDeriving #-}
 
 module Control.Evolution 
   ( runEvolution
   , Rnd(..)
+  , EvoClass(..)
   , Population(..)
   , Solution(..)
   , Interpreter(..)
@@ -24,6 +30,7 @@ import System.Random
 import Data.Monoid                       (Sum(..))
 import Data.Vector                       (Vector(..), (!))
 import qualified Data.Vector             as V
+import Data.List                         (sort)
 
 -- | A random element is the state monad with StdGen as a state
 type Rnd a        = StateT StdGen IO a
@@ -48,11 +55,11 @@ class Ord a => Solution a where
 --
 -- `_cx OnePoint pop = myOnePoint pop`
 -- `_cx NPoints  pop = error "NPoints crossover not implemented for this algorithm"`
-data Interpreter a = Funs { _cx        :: Crossover -> [a] -> Rnd a
-                          , _mut       :: Mutation -> a -> Rnd a
-                          , _reproduce :: Reproduction -> Population a -> Population a -> Rnd (Population a)
-                          , _select    :: Selection -> Population a -> Rnd a
-                          , _filter    :: Predicate -> Population a -> Population a
+data Interpreter a = Funs { _cx        :: Crossover a -> [a] -> Rnd a
+                          , _mut       :: Mutation a -> a -> Rnd a
+                          --, _reproduce :: Reproduction -> [Population a] -> Rnd (Population a)
+                          --, _select    :: Selection -> Population a -> Rnd a
+                          -- , _filter    :: Predicate -> Population a -> Population a
                           , _create    :: Rnd a
                           , _evaluate  :: a -> Rnd a
                           } 
@@ -68,9 +75,29 @@ data Reproduction = Generational
                   | KeepBest 
                   | ReplaceWorst 
                   | Probabilistic Selection
-                  | CustomReproduction1
-                  | CustomReproduction2
                   deriving (Show, Read)
+
+reproduce :: (Ord a, Solution a) => Reproduction -> [Population a] -> Rnd (Population a)
+reproduce Generational [pop] = pure pop
+reproduce KeepBest pops = pure $ V.take npop $ sortVec $ V.concat pops
+  where npop = length $ head pops
+reproduce ReplaceWorst (parents:pops) 
+  | nChildren == nParents = pure children
+  | nChildren > nParents  = pure $ V.take nParents $ sortVec children
+  | otherwise             = pure $ V.take (nParents - nChildren) parents <> children 
+  where
+    nParents  = V.length parents
+    nChildren = V.length children
+    children  = V.concat pops
+reproduce (Probabilistic sel) (parents:pops) = V.fromList <$> replicateM nPop (select sel everyone)
+  where
+    everyone = V.concat (parents:pops)
+    nPop     = V.length parents
+reproduce _ [] = error "reproduction must be applied to nonempty population"
+reproduce r _  = error $ "unsupported reproduction: " <> show r
+
+sortVec :: (Ord a, Eq a) => Vector a -> Vector a
+sortVec = V.fromList . sort . V.toList
 
 -- | Selection algorithms
 --
@@ -80,41 +107,35 @@ data Reproduction = Generational
 -- * CustomSelection1/2: custom selection strategies not covered by this data type 
 data Selection = Tournament Int 
                | RouletteWheel 
-               | SUS
-               | CustomSelection1
-               | CustomSelection2
                deriving (Show, Read)
 
--- | Crossover algorithms
---
--- * OnePoint: one-point crossover, exchange chromossome material on a single point
--- * NPoints: n-points crossover, exchange chromossome material on a n points
--- * CustomCX1/2: custom crossover strategies not covered by this data type 
-data Crossover = OnePoint 
-               | NPoints Int
-               | CustomCX1
-               | CustomCX2
-               deriving (Show, Read)
+select :: (Ord a, Solution a) => Selection -> Population a -> Rnd a
+select _ pop | V.null pop = error "empty population in selection"
+select (Tournament n) pop = do
+  (ix:ixs) <- replicateM n (randomInt (0, V.length pop - 1))
+  pure $ foldr (\i p -> min (pop V.! i) p) (pop V.! ix) ixs
+select RouletteWheel pop = do
+  let fits     = V.map _getFitness pop
+      tot      = V.sum fits
+      normFits = V.map (/tot) fits
+      cumsum   = V.scanl1 (+) normFits
+  p <- randomDbl
+  let mix = V.findIndex (>= p) cumsum
+  case mix of 
+    Nothing -> pure $ pop `V.unsafeIndex` 0
+    Just ix -> pure $ pop `V.unsafeIndex` ix
 
--- | Mutation algorithms
+-- | Data family for Crossover and Mutation
 --
--- * SwapTree: swap two branches of an expression tree (GP)
--- * InsertVar: inserts a variable into an expression tree (GP)
--- * LocalSearch: applies a local search strategy
--- * Uniform: changes each element with probability associated with the mutation 
--- * CustomMut1/2: custom mutation strategies not covered by this data type 
-data Mutation = SwapTree 
-              | InsertNode -- Var/Term
-              | RemoveNode -- Var/Term
-              | ChangeNode -- Var/Function/Exponent
-              | ReplaceSubTree
-              | GroupMutation -- choose from one of the mutation operators
-              | LocalSearch
-              | Uniform 
-              | CustomMut1
-              | CustomMut2
-              deriving (Show, Read)
-                  
+-- as each algorithm/problem `t` has a different set of 
+-- possible operators, the user must provide a data type
+-- for Crossover and Mutation.
+--
+-- See test/Specs.hs for an example.
+class (Show (Crossover t), Read (Crossover t), Show (Mutation t), Read (Mutation t)) => EvoClass t where 
+  data Crossover t :: *
+  data Mutation t :: *
+
 -- | Predicate for population filter 
 --
 -- * Feasible: selects only the feasible solutions
@@ -125,12 +146,20 @@ data Predicate = Feasible
                | All
                deriving (Show, Read)
 
+filterPop :: Solution a => Predicate -> Population a -> Population a
+filterPop Feasible   = V.filter _isFeasible
+filterPop Infeasible = V.filter (not . _isFeasible)
+filterPop All        = id
+
 -- | DSL of an evolutionary process
 --
 -- The evolutionary process is composed of a reproduction strategy between 
 -- two evolutionary cycles applied to a filtered population.
-data Evolution = Reproduce Reproduction Predicate EvoCycle Predicate EvoCycle
-  deriving (Show, Read)
+data Evolution t = Reproduce Reproduction [(Predicate, EvoCycle t)]
+--data Evolution t = Reproduce Reproduction Predicate (EvoCycle t) Predicate (EvoCycle t)
+--  deriving (Show, Read)
+deriving instance EvoClass t => Show (Evolution t)
+deriving instance EvoClass t => Read (Evolution t)
 
 -- | An evolution cycle is composed of a sequence of
 -- crossover and mutation operations. The order and quantity of each operation 
@@ -151,20 +180,25 @@ data Evolution = Reproduce Reproduction Predicate EvoCycle Predicate EvoCycle
 --      (Mutate SwapTree 0.2
 --         (Mutate LocalSearch 1.0 End))
 --
-data EvoCycle = Cross Crossover Int Double Selection EvoCycle
-              | Mutate Mutation Double EvoCycle
-              | End
-              deriving (Show, Read)
+data EvoCycle t = Cross (Crossover t) Int Double Selection (EvoCycle t)
+                | Mutate (Mutation t) Double (EvoCycle t)
+                | End
+
+deriving instance EvoClass t => Show (EvoCycle t)
+deriving instance EvoClass t => Read (EvoCycle t)
 
 randomDbl :: StateT StdGen IO Double
 randomDbl = state (randomR (0.0, 1.0))
+
+randomInt :: (Int, Int) -> StateT StdGen IO Int
+randomInt rng = state (randomR rng)
 
 -- | Evaluates an evolution cycle.
 -- Each step involves the immutable population as a context
 -- and an individual as focus.
 -- By the end of the cycle, a single individual will be created.
 evalCycle :: (Solution a, NFData a)
-          => EvoCycle
+          => EvoCycle a
           -> Population a
           -> a
           -> ReaderT (Interpreter a) (StateT StdGen IO) a
@@ -173,11 +207,11 @@ evalCycle End pop p  = pure p
 evalCycle (Cross cx nParents pc sel evo) pop !p = do
   prob    <- lift randomDbl
   cxf     <- asks _cx
-  choose  <- asks _select
+  --choose  <- asks _select
   eval    <- asks _evaluate 
-  parents <- lift $ replicateM nParents (choose sel pop)
+  parents <- lift $ replicateM nParents (select sel pop)
   child   <- if prob < pc
-              then lift $ (cxf cx parents >>= eval)
+              then lift (cxf cx parents >>= eval)
               else pure $ head parents
   evalCycle evo pop child
 
@@ -186,7 +220,7 @@ evalCycle (Mutate mut pm evo) pop !p = do
   mutf  <- asks _mut
   eval  <- asks _evaluate
   child <- if prob < pm
-              then lift $ (mutf mut p >>= eval)
+              then lift (mutf mut p >>= eval)
               else pure p
   evalCycle evo pop child
 
@@ -197,23 +231,31 @@ evalCycle (Mutate mut pm evo) pop !p = do
 -- Each individual of the new populations are generated in parallel 
 -- using the evolution cycle. 
 evalEvo :: (Solution a, NFData a)
-        => Evolution 
+        => Evolution a 
         -> Population a 
         -> [StdGen]
         -> ReaderT (Interpreter a) (StateT StdGen IO) (Population a, [StdGen])
-evalEvo (Reproduce rep pred1 evo1 pred2 evo2) pop gs = do
+evalEvo (Reproduce rep []) _ _ = error "empty evolution cycle"
+evalEvo (Reproduce rep predEvos) pop gs = do
   config       <- ask
-  keeper       <- asks _filter
-  (pop1, gs1)  <- case evo1 of
-                    End -> pure (keeper pred1 pop, gs)
-                    _   -> runPar evo1 config gs (keeper pred1 pop)
-  (pop2, gs2)  <- case evo2 of
-                    End -> pure (keeper pred2 pop, gs1)
-                    _   -> runPar evo2 config gs1 (keeper pred2 pop)
-  repFun <- asks _reproduce
-  pop' <- lift $ repFun rep pop1 pop2
-  return (pop', gs2)
+  --keeper       <- asks _filter
+  (pops, gs')  <- runPredEvo predEvos gs
+  --repFun <- asks _reproduce
+  pop' <- lift $ reproduce rep pops 
+  return (pop', gs')
     where
+      runPredEvo [] gs1               = pure ([], gs1)
+      runPredEvo ((pred,End):ps) gs1 = do
+        --keeper      <- asks _filter
+        (pops, gs2) <- runPredEvo ps gs1
+        pure (filterPop pred pop:pops, gs2)
+      runPredEvo ((pred,evo):ps) gs1  = do
+        config <- ask
+        --keeper <- asks _filter
+        (pop', gs2) <- runPar evo config gs1 (filterPop pred pop)
+        (pops, gs3) <- runPredEvo ps gs2
+        pure (pop':pops, gs3)
+
       runPar evo cfg g pop' = splitResponse
                             $ traverseConcurrently (ParN 0) (runCycle evo cfg pop') 
                             $ zip (V.toList pop') g
@@ -230,7 +272,7 @@ genEvolution :: (Solution a, NFData a)
              => Int 
              -> Int 
              -> (Population a -> IO ()) 
-             -> Evolution 
+             -> Evolution a 
              -> ReaderT (Interpreter a) (StateT StdGen IO) ([Double], a)
 genEvolution nGens nPop logger evo = do
   createSol <- asks _create
@@ -252,7 +294,7 @@ runEvolution :: (Solution a, NFData a)     -- ^ for a type `a` representing a so
              => Int                        -- ^ number of generations 
              -> Int                        -- ^ population size
              -> (Population a -> IO ())    -- ^ a logger function to run at every generation 
-             -> Evolution                  -- ^ Evolutionary process 
+             -> Evolution a                -- ^ Evolutionary process 
              -> StdGen                     -- ^ random number generator
              -> Interpreter a              -- ^ Interpreter of evolutionary process 
              -> IO ([Double], a)           -- ^ returns the average fitness of every generation and the final champion

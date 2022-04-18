@@ -1,7 +1,10 @@
+{-# language TypeFamilies #-}
+
 import Control.Evolution
 import Control.Monad.State.Strict
 import qualified Data.Vector as V
 import System.Random
+import Control.DeepSeq
 
 data Test = Test { _chromo   :: [Double]
                  , _fit      :: Double
@@ -17,6 +20,9 @@ instance Solution Test where
   _getFitness = _fit 
   _isFeasible = (==0) . _feasible
 
+instance NFData Test where
+  rnf _ = ()
+
 toss :: StateT StdGen IO Bool
 toss = state random
   
@@ -26,6 +32,10 @@ testCreate = do
   b1 <- state random
   b2 <- state random
   pure $ Test [b1, b2] 0.0 0.0
+
+instance EvoClass Test where 
+  data Crossover Test = OnePoint deriving (Show, Read)
+  data Mutation  Test = SwapTree deriving (Show, Read)
 
 testCX _ [p1,p2] = do
   liftIO $ putStrLn "cx"
@@ -46,24 +56,13 @@ testMut _ p = do
     then pure (Test [cp !! 0, r] 0.0 0.0)
     else pure (Test [r, cp !! 1] 0.0 0.0)
 
-testSelect _ pop = do
-  let n = V.length pop
-  liftIO $ putStrLn "select"
-  ix <- state (randomR (0, n-1))
-  pure $ pop V.! ix
-
-testReproduce _ p1 p2 = do
-  liftIO $ putStrLn "reproduce"
-  pure p2
-
 interpret :: Interpreter Test
-interpret = Funs testCX testMut testReproduce testSelect (\_ xs -> xs) testCreate calcFitness
+interpret = Funs testCX testMut testCreate calcFitness
 
 evo = Reproduce Generational 
-        All End
-        All (Cross OnePoint 2 0.3 (Tournament 2) 
-               (Mutate SwapTree 0.7 End)
-            )
+        [(All, Cross OnePoint 2 0.3 (Tournament 2) 
+                 (Mutate SwapTree 0.7 End))
+        ]
 
 main :: IO ()
 main = do
