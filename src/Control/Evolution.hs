@@ -75,11 +75,13 @@ data Interpreter a = Funs { _cx        :: Crossover a -> [a] -> Rnd a
 data Reproduction = Generational 
                   | KeepBest 
                   | ReplaceWorst 
+                  | Merge
                   | Probabilistic Selection
                   deriving (Show, Read)
 
 reproduce :: (Ord a, Solution a) => Reproduction -> [Population a] -> Rnd (Population a)
 reproduce Generational [pop] = pure pop
+reproduce Merge pops = pure $ V.concat pops
 reproduce KeepBest pops = pure $ V.take npop $ sortVec $ V.concat pops
   where npop = length $ head pops
 reproduce ReplaceWorst (parents:pops) 
