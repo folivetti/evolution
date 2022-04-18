@@ -19,6 +19,7 @@ module Control.Evolution
   , Predicate(..)
   , Evolution(..)
   , EvoCycle(..)
+  , Op(..)
   )
   where
 
@@ -143,19 +144,20 @@ class (Show (Crossover t), Read (Crossover t), Show (Mutation t), Read (Mutation
 -- * All: selects the entire population
 data Predicate = Feasible 
                | Infeasible
-               | All
+               | AllOf
                deriving (Show, Read)
 
 filterPop :: Solution a => Predicate -> Population a -> Population a
 filterPop Feasible   = V.filter _isFeasible
 filterPop Infeasible = V.filter (not . _isFeasible)
-filterPop All        = id
+filterPop AllOf      = id
 
 -- | DSL of an evolutionary process
 --
 -- The evolutionary process is composed of a reproduction strategy between 
 -- two evolutionary cycles applied to a filtered population.
-data Evolution t = Reproduce Reproduction [(Predicate, EvoCycle t)]
+data Evolution t = Reproduce Reproduction [EvoCycle t]
+--  [(Predicate, EvoCycle t)]
 --data Evolution t = Reproduce Reproduction Predicate (EvoCycle t) Predicate (EvoCycle t)
 --  deriving (Show, Read)
 deriving instance EvoClass t => Show (Evolution t)
@@ -180,12 +182,28 @@ deriving instance EvoClass t => Read (Evolution t)
 --      (Mutate SwapTree 0.2
 --         (Mutate LocalSearch 1.0 End))
 --
-data EvoCycle t = Cross (Crossover t) Int Double Selection (EvoCycle t)
+--data EvoCycle t = Loop (Gen t)
+                
+data EvoCycle t = Op t :> EvoCycle t
+                | Done
+                | Parent
+data Op t = Cross (Crossover t) Int Double Selection
+          | Mutate (Mutation t) Double
+          | With Predicate
+{-                
+Cross (Crossover t) Int Double Selection (EvoCycle t)
                 | Mutate (Mutation t) Double (EvoCycle t)
-                | End
-
+                | Done
+                | Parent
+-}
 deriving instance EvoClass t => Show (EvoCycle t)
 deriving instance EvoClass t => Read (EvoCycle t)
+--deriving instance EvoClass t => Show (Gen t)
+--deriving instance EvoClass t => Read (Gen t)
+deriving instance EvoClass t => Show (Op t)
+deriving instance EvoClass t => Read (Op t)
+
+infixr 5 :>
 
 randomDbl :: StateT StdGen IO Double
 randomDbl = state (randomR (0.0, 1.0))
@@ -202,9 +220,11 @@ evalCycle :: (Solution a, NFData a)
           -> Population a
           -> a
           -> ReaderT (Interpreter a) (StateT StdGen IO) a
-evalCycle End pop p  = pure p
+evalCycle Done pop p   = pure p
+evalCycle Parent pop p = pure p
+evalCycle (With pred :> evo) pop p = evalCycle evo (filterPop pred pop) p
 
-evalCycle (Cross cx nParents pc sel evo) pop !p = do
+evalCycle (Cross cx nParents pc sel :> evo) pop !p = do
   prob    <- lift randomDbl
   cxf     <- asks _cx
   --choose  <- asks _select
@@ -215,7 +235,7 @@ evalCycle (Cross cx nParents pc sel evo) pop !p = do
               else pure $ head parents
   evalCycle evo pop child
 
-evalCycle (Mutate mut pm evo) pop !p = do
+evalCycle (Mutate mut pm :> evo) pop !p = do
   prob  <- lift randomDbl
   mutf  <- asks _mut
   eval  <- asks _evaluate
@@ -236,24 +256,17 @@ evalEvo :: (Solution a, NFData a)
         -> [StdGen]
         -> ReaderT (Interpreter a) (StateT StdGen IO) (Population a, [StdGen])
 evalEvo (Reproduce rep []) _ _ = error "empty evolution cycle"
-evalEvo (Reproduce rep predEvos) pop gs = do
+evalEvo (Reproduce rep evos) pop gs = do
   config       <- ask
-  --keeper       <- asks _filter
-  (pops, gs')  <- runPredEvo predEvos gs
-  --repFun <- asks _reproduce
+  (pops, gs')  <- runEvo evos gs
   pop' <- lift $ reproduce rep pops 
   return (pop', gs')
     where
-      runPredEvo [] gs1               = pure ([], gs1)
-      runPredEvo ((pred,End):ps) gs1 = do
-        --keeper      <- asks _filter
-        (pops, gs2) <- runPredEvo ps gs1
-        pure (filterPop pred pop:pops, gs2)
-      runPredEvo ((pred,evo):ps) gs1  = do
+      runEvo [] gs1               = pure ([], gs1)
+      runEvo (evo:ps) gs1  = do
         config <- ask
-        --keeper <- asks _filter
-        (pop', gs2) <- runPar evo config gs1 (filterPop pred pop)
-        (pops, gs3) <- runPredEvo ps gs2
+        (pop', gs2) <- runPar evo config gs1 pop--(filterPop pred pop)
+        (pops, gs3) <- runEvo ps gs2
         pure (pop':pops, gs3)
 
       runPar evo cfg g pop' = splitResponse

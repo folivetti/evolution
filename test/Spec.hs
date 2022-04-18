@@ -60,8 +60,10 @@ interpret :: Interpreter Test
 interpret = Funs testCX testMut testCreate calcFitness
 
 evo = Reproduce Generational 
-        [(All, Cross OnePoint 2 0.3 (Tournament 2) 
-                 (Mutate SwapTree 0.7 End))
+        [With AllOf 
+           :> Cross OnePoint 2 0.3 (Tournament 2) 
+           :> Mutate SwapTree 0.7 
+           :> Done
         ]
 
 main :: IO ()
