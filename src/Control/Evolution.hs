@@ -305,8 +305,7 @@ genEvolution nGens nPop logger evo = do
                                       go (n-1) pop' (avgs', best') gs'
 
 -- | Runs the evolutionary process 
-runEvolution :: (Solution a, NFData a)     -- ^ for a type `a` representing a solution 
-             => Int                        -- ^ number of generations 
+runEvolution :: (Solution a, NFData a) => Int -- ^ number of generations 
              -> Int                        -- ^ population size
              -> (Population a -> IO ())    -- ^ a logger function to run at every generation 
              -> Evolution a                -- ^ Evolutionary process 
