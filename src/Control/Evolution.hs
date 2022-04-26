@@ -73,7 +73,7 @@ cx OnePoint [p1,p2] = do
   let c1 = _chromo p1
       c2 = _chromo p2
   ix <- randomIndex (length c1)
-  let c = take ix c1 <> drop ix c2
+  let c = take ix c1 \<> drop ix c2
   pure $ Bin c 0.0 -- the individual will be evaluated later
   
 mut SinglePoint (Bin c f) = do
@@ -82,7 +82,7 @@ mut SinglePoint (Bin c f) = do
   pure $ Bin c' 0.0
   
 randomIndividual n = do
-    c <- take n <$> state randoms
+    c \<- take n \<$> state randoms
     pure $ Bin c 0.0
     
 -- how many True in the chromossome
@@ -101,9 +101,9 @@ logger pop  = do
   let best  = getBestFitness pop
       worst = getBestFitness worst
       avg   = getAvgFitness
-  print $ "The best fitness is: " <> show best
-  print $ "The worst fitness is: " <> show worst
-  print $ "The avg fitness is: " <> show avg
+  print $ "The best fitness is: " \<> show best
+  print $ "The worst fitness is: " \<> show worst
+  print $ "The avg fitness is: " \<> show avg
 @
 
 Now you can define your evolutionary algorithm using the DSL and
@@ -148,14 +148,14 @@ Reproduce Generational
 We can automatically parse as:
 
 @
-evo <- read <$> readFile "ga.evo"
+evo \<- read \<$> readFile "ga.evo"
 @
 
 The evolution DSL is described as a reproduction operator
 followed by a list of evolution cycles.
 
 @
-Reproduce <reproduction operator> [<evolution cycle>]
+Reproduce \<reproduction operator> [\<evolution cycle>]
 @
 
 The evolution cycle can be either `Parent`, when you just want
@@ -166,9 +166,9 @@ the cycle.
 The operator can be 
 
 @
-Cross <crossover operator> <n-parents> <probability> <selection operator>
-Mutate <mutation operator> <probability>
-With <predicate>
+Cross \<crossover operator> \<n-parents> \<probability> \<selection operator>
+Mutate \<mutation operator> \<probability>
+With \<predicate>
 @
 
 The `With` operator is used to filter the population and can be `AllOf` (no filter),

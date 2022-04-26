@@ -73,7 +73,7 @@ cx OnePoint [p1,p2] = do
   let c1 = _chromo p1
       c2 = _chromo p2
   ix &lt;- randomIndex (length c1)
-  let c = take ix c1 &lt;&gt; drop ix c2
+  let c = take ix c1 \&lt;&gt; drop ix c2
   pure $ Bin c 0.0 -- the individual will be evaluated later
   
 mut SinglePoint (Bin c f) = do
@@ -82,7 +82,7 @@ mut SinglePoint (Bin c f) = do
   pure $ Bin c' 0.0
   
 randomIndividual n = do
-    c &lt;- take n &lt;$&gt; state randoms
+    c \&lt;- take n \&lt;$&gt; state randoms
     pure $ Bin c 0.0
     
 -- how many True in the chromossome
@@ -101,9 +101,9 @@ logger pop  = do
   let best  = getBestFitness pop
       worst = getBestFitness worst
       avg   = getAvgFitness
-  print $ &quot;The best fitness is: &quot; &lt;&gt; show best
-  print $ &quot;The worst fitness is: &quot; &lt;&gt; show worst
-  print $ &quot;The avg fitness is: &quot; &lt;&gt; show avg
+  print $ &quot;The best fitness is: &quot; \&lt;&gt; show best
+  print $ &quot;The worst fitness is: &quot; \&lt;&gt; show worst
+  print $ &quot;The avg fitness is: &quot; \&lt;&gt; show avg
 @
 
 Now you can define your evolutionary algorithm using the DSL and
@@ -148,14 +148,14 @@ Reproduce Generational
 We can automatically parse as:
 
 @
-evo &lt;- read &lt;$&gt; readFile &quot;ga.evo&quot;
+evo \&lt;- read \&lt;$&gt; readFile &quot;ga.evo&quot;
 @
 
 The evolution DSL is described as a reproduction operator
 followed by a list of evolution cycles.
 
 @
-Reproduce &lt;reproduction operator&gt; [&lt;evolution cycle&gt;]
+Reproduce \&lt;reproduction operator&gt; [\&lt;evolution cycle&gt;]
 @
 
 The evolution cycle can be either `Parent`, when you just want
@@ -166,9 +166,9 @@ the cycle.
 The operator can be 
 
 @
-Cross &lt;crossover operator&gt; &lt;n-parents&gt; &lt;probability&gt; &lt;selection operator&gt;
-Mutate &lt;mutation operator&gt; &lt;probability&gt;
-With &lt;predicate&gt;
+Cross \&lt;crossover operator&gt; \&lt;n-parents&gt; \&lt;probability&gt; \&lt;selection operator&gt;
+Mutate \&lt;mutation operator&gt; \&lt;probability&gt;
+With \&lt;predicate&gt;
 @
 
 The `With` operator is used to filter the population and can be `AllOf` (no filter),
