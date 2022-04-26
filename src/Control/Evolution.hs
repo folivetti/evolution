@@ -147,7 +147,9 @@ Reproduce Generational
 
 We can automatically parse as:
 
--- > evo <- read <$> readFile "ga.evo"
+@
+evo <- read <$> readFile "ga.evo"
+@
 
 The evolution DSL is described as a reproduction operator
 followed by a list of evolution cycles.
