@@ -4,7 +4,175 @@
 {-# language PolyKinds #-}
 {-# language GADTs #-}
 {-# language StandaloneDeriving #-}
+{-|
+Module      : Control.Evolution 
+Description : a generic evolutionary algorithm DSL
+Copyright   : (c) Fabricio Olivetti de Franca, 2022
+License     : GPL-3
+Maintainer  : fabricio.olivetti@gmail.com
+Stability   : experimental
+Portability : POSIX
 
+This evolution package supports the creation of evolutionary and bio-inspired algorithms
+with an user friendly domain specific language.
+
+The package provides the main reproduction and selection strategies, 
+a DSL to describe the evolution process, a function that runs the 
+evolution algorithm with support to concurrency, and a customizable
+DSL to describe the Crossover and Mutation operators for specific
+class of problems.
+
+The main idea is that the user focus only on implementing the 
+crossover and mutation operators, the individual representation,
+a fitness function, and a random individual generator. After that,
+the user can customize the main loop of the evolutionary process
+using the DSL and without worrying about implementing the process.
+
+Example - Simple GA:
+
+Let's suppose we are working with a binary representation and we want
+to support a one-point crossover, single point mutation, multi-point mutation.
+
+We must first create a data type with the chromossome and a fitness field and
+add support to `Eq, Ord` classes by comparing the fitness:
+
+@
+data Bin = Bin { _chromo :: [Bool]
+               , _fit :: Double
+               }
+               
+instance Eq Bin where
+  t1 == t2 = _fit t1 == _fit t2
+instance Ord Bin where
+  t1 <= t2 = _fit t1 <= _fit t2
+@
+
+After that, we instantiate the `Solution` class to indicate
+how to retrieve the fitness of the individual and check
+whether it is feasible or not.
+
+@
+instance Solution Bin where
+  _getFitness = _fit 
+  _isFeasible = const 0.0 -- always feasible
+@
+
+Next, we instantiate the `EvoClass` to create
+the DSL for the crossover and mutation operators:
+
+@
+instance EvoClass Bin where 
+  data Crossover Bin = OnePoint deriving (Show, Read)
+  data Mutation  Bin = SinglePoint | MultiPoints deriving (Show, Read)
+@
+
+Finally, we implement the required functions and create an `Interpreter`:
+
+@
+cx OnePoint [p1,p2] = do
+  let c1 = _chromo p1
+      c2 = _chromo p2
+  ix <- randomIndex (length c1)
+  let c = take ix c1 <> drop ix c2
+  pure $ Bin c 0.0 -- the individual will be evaluated later
+  
+mut SinglePoint (Bin c f) = do
+  ix <- randomIndex (length c)
+  let c' = swap ix c
+  pure $ Bin c' 0.0
+  
+randomIndividual n = do
+    c <- take n <$> state randoms
+    pure $ Bin c 0.0
+    
+-- how many True in the chromossome
+fitness (Bin c _) = pure $ Bin c (length $ filter id c)
+
+interpret :: Interpreter Test
+interpret = Funs cx mut randomIndividual fitness
+@
+
+We can create a customized logger to store the information
+at every generation.
+
+@
+logger :: Population a -> IO ()
+logger pop  = do
+  let best  = getBestFitness pop
+      worst = getBestFitness worst
+      avg   = getAvgFitness
+  print $ "The best fitness is: " <> show best
+  print $ "The worst fitness is: " <> show worst
+  print $ "The avg fitness is: " <> show avg
+@
+
+Now you can define your evolutionary algorithm using the DSL and
+run it using `runEvolution`
+
+@
+evo = Reproduce Generational 
+        [With AllOf 
+           :> Cross OnePoint 2 0.3 (Tournament 2) 
+           :> Mutate SinglePoint 0.7 
+           :> Done
+        ]
+
+-- run the evolution with 100 individuals for 500 generations
+-- and random seed `g`
+runEvolution 500 100 logger evo g interpret
+@
+
+We can, for example, create a an evolutionary algorithm that 
+creates two child population: one with crossover and mutation
+and another with only mutation, and then we reproduce using 
+tournament selection.
+
+@
+evo = Reproduce (Probabilistic (Tournament 2))
+        [ With AllOf :> Cross OnePoint 2 0.3 (Tournament 2) :> Mutate SinglePoint 0.7 :> Done
+        , With AllOf :> Mutate MultiPoints 0.9 :> Done
+        ]
+@
+
+We can even parse the evolution process from a file. If we have a file "ga.evo" with the content
+
+@
+Reproduce Generational 
+    [With AllOf 
+       :> Cross OnePoint 2 0.3 (Tournament 2) 
+       :> Mutate SinglePoint 0.7 
+       :> Done
+    ]
+@
+
+We can automatically parse as:
+
+-- > evo <- read <$> readFile "ga.evo"
+
+The evolution DSL is described as a reproduction operator
+followed by a list of evolution cycles.
+
+@
+Reproduce <reproduction operator> [<evolution cycle>]
+@
+
+The evolution cycle can be either `Parent`, when you just want
+to pass the current population, `<operator> :> <evolution cycle>`, 
+when you want to chain two operators, and `Done`, marking the end of
+the cycle.
+
+The operator can be 
+
+@
+Cross <crossover operator> <n-parents> <probability> <selection operator>
+Mutate <mutation operator> <probability>
+With <predicate>
+@
+
+The `With` operator is used to filter the population and can be `AllOf` (no filter),
+`Feasible`, `Infeasible`.
+
+-}
 module Control.Evolution 
   ( runEvolution
   , Rnd(..)
@@ -58,9 +226,6 @@ class Ord a => Solution a where
 -- `_cx NPoints  pop = error "NPoints crossover not implemented for this algorithm"`
 data Interpreter a = Funs { _cx        :: Crossover a -> [a] -> Rnd a
                           , _mut       :: Mutation a -> a -> Rnd a
-                          --, _reproduce :: Reproduction -> [Population a] -> Rnd (Population a)
-                          --, _select    :: Selection -> Population a -> Rnd a
-                          -- , _filter    :: Predicate -> Population a -> Population a
                           , _create    :: Rnd a
                           , _evaluate  :: a -> Rnd a
                           } 
@@ -70,8 +235,8 @@ data Interpreter a = Funs { _cx        :: Crossover a -> [a] -> Rnd a
 -- * Generational: the children replaces the parent population
 -- * KeepBest: generational but keeping the best individual (either from parent or child population)
 -- * ReplaceWorst: replaces the worst individuals with new random solutions or sampled solutions from the parent
+-- * Merge: merge all the populations from different generation process
 -- * Probabilistic: sample individuals from the combined parent+child populations using a Selection strategy
--- * CustomReproduction1/2: custom reproduction strategies not covered by this data type 
 data Reproduction = Generational 
                   | KeepBest 
                   | ReplaceWorst 
@@ -79,6 +244,7 @@ data Reproduction = Generational
                   | Probabilistic Selection
                   deriving (Show, Read)
 
+-- | applies a reproduction algorithm on a list of populations. It returns a random population.
 reproduce :: (Ord a, Solution a) => Reproduction -> [Population a] -> Rnd (Population a)
 reproduce Generational [pop] = pure pop
 reproduce Merge pops = pure $ V.concat pops
@@ -101,17 +267,19 @@ reproduce r _  = error $ "unsupported reproduction: " <> show r
 
 sortVec :: (Ord a, Eq a) => Vector a -> Vector a
 sortVec = V.fromList . sort . V.toList
+{-# INLINE sortVec #-}
 
 -- | Selection algorithms
 --
 -- * Tournament: tournament selection, samples n solutions and returns the best
 -- * RouletteWheel: roulette wheel, calculates the probability of choosing an individual proportional to its fitness and sample an individual using this probability distribution
--- * SUS: similar to roulette wheel, but samples the entire population at once by using multiple evenly spaced arrows with the wheel
--- * CustomSelection1/2: custom selection strategies not covered by this data type 
 data Selection = Tournament Int 
                | RouletteWheel 
                deriving (Show, Read)
 
+-- | selects a random individual from the population using the `Selection` strategy.
+-- TODO: some strategies sample a bunch of solutions in a single pass (SUS)
+-- this would require a modification on how selection is applied.
 select :: (Ord a, Solution a) => Selection -> Population a -> Rnd a
 select _ pop | V.null pop = error "empty population in selection"
 select (Tournament n) pop = do
@@ -192,16 +360,9 @@ data EvoCycle t = Op t :> EvoCycle t
 data Op t = Cross (Crossover t) Int Double Selection
           | Mutate (Mutation t) Double
           | With Predicate
-{-                
-Cross (Crossover t) Int Double Selection (EvoCycle t)
-                | Mutate (Mutation t) Double (EvoCycle t)
-                | Done
-                | Parent
--}
+
 deriving instance EvoClass t => Show (EvoCycle t)
 deriving instance EvoClass t => Read (EvoCycle t)
---deriving instance EvoClass t => Show (Gen t)
---deriving instance EvoClass t => Read (Gen t)
 deriving instance EvoClass t => Show (Op t)
 deriving instance EvoClass t => Read (Op t)
 
@@ -317,11 +478,13 @@ runEvolution nGens nPop logger evo g = flip evalStateT g . runReaderT (genEvolut
 
 splitGensWithIndex :: Int -> StdGen -> [StdGen]
 splitGensWithIndex n = map fst . take n . iterate (\(g1,g2) -> split g2) . split 
+{-# INLINE splitGensWithIndex #-}
 
 avgFit :: Solution a => Vector a -> Double
 avgFit pop = getSum tot / fromIntegral (V.length pop)
   where
     tot = foldMap (Sum . _getFitness) pop
+{-# INLINE avgFit #-}
 
 getBest :: Solution a => a -> Vector a -> a
 getBest best pop
@@ -331,3 +494,4 @@ getBest best pop
   | otherwise                           = V.minimum feasible
   where
     feasible = V.filter _isFeasible pop
+{-# INLINE getBest #-}
