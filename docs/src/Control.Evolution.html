@@ -13,7 +13,7 @@ Maintainer  : fabricio.olivetti@gmail.com
 Stability   : experimental
 Portability : POSIX
 
-This evolution package supports the creation of evolutionary and bio-inspired algorithms
+The evolution package supports the creation of evolutionary and bio-inspired algorithms
 with an user friendly domain specific language.
 
 The package provides the main reproduction and selection strategies, 
