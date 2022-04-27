@@ -15,6 +15,10 @@ a fitness function, and a random individual generator. After that,
 the user can customize the main loop of the evolutionary process
 using the DSL and without worrying about implementing the process.
 
+**Warning:** the main objective of this package is to create a minimal
+DSL capable of describing (almost) every bio-inspired search algorithm. As such,
+every new version can potentially break compatibility with the previous one.
+
 ## Example - Simple GA:
 
 Let's suppose we are working with a binary representation and we want
