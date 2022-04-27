@@ -84,6 +84,9 @@ mut SinglePoint (Bin c f) = do
   ix <- randomIndex (length c)
   let c' = swap ix c
   pure $ Bin c' 0.0
+mut MultiPoints (Bin c f) = do
+  c' <- traverse swapRnd c  
+  pure $ Bin c' 0.0
   
 randomIndividual n = do
     c \<- take n \<$> state randoms
