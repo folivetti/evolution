@@ -351,6 +351,7 @@ sortVec = V.fromList . sort . V.toList
 -- * Tournament: tournament selection, samples n solutions and returns the best
 -- * RouletteWheel: roulette wheel, calculates the probability of choosing an individual proportional to its fitness and sample an individual using this probability distribution
 data Selection = Tournament Int 
+               | CrowdingTournament Int
                | RouletteWheel 
                deriving (Show, Read)
 
@@ -362,6 +363,11 @@ select _ pop | V.null pop = error "empty population in selection"
 select (Tournament n) pop = do
   (ix:ixs) <- replicateM n (randomInt (0, V.length pop - 1))
   pure $ foldr (\i p -> min (pop V.! i) p) (pop V.! ix) ixs
+select (CrowdingTournament n) pop = do
+  (ix:ixs) <- replicateM n (randomInt (0, V.length pop - 1))
+  let pop'  = V.fromList (pop V.! ix : map (pop V.!) ixs)
+      (i:_) = crowdingDistance pop' $ concat $ fastNondominatedSort pop'
+  pure $ pop' V.! i
 select RouletteWheel pop = do
   let fits     = V.map (head . _getFitness) pop -- defaults to the first objective 
       tot      = V.sum fits
