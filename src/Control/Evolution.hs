@@ -526,7 +526,7 @@ genEvolution :: (Solution a, NFData a)
              -> Int 
              -> (Population a -> IO ()) 
              -> Evolution a 
-             -> ReaderT (Interpreter a) (StateT StdGen IO) ([Double], a)
+             -> ReaderT (Interpreter a) (StateT StdGen IO) ([Double], a, Population a)
 genEvolution nGens nPop logger evo = do
   createSol <- asks _create
   eval      <- asks _evaluate 
@@ -535,7 +535,7 @@ genEvolution nGens nPop logger evo = do
   liftIO $ logger pop0
   go nGens pop0 ([avgFit pop0], V.minimum pop0) $ splitGensWithIndex nPop g 
     where
-      go 0 _   (!avgs, !best) gs = return (reverse avgs, best)
+      go 0 pop (!avgs, !best) gs = return (reverse avgs, best, pop)
       go n pop (!avgs, !best) gs = do (pop', gs') <- evalEvo evo pop gs
                                       liftIO $ logger pop'
                                       let avgs' = force $ avgFit pop' : avgs
@@ -549,7 +549,7 @@ runEvolution :: (Solution a, NFData a) => Int -- ^ number of generations
              -> Evolution a                -- ^ Evolutionary process 
              -> StdGen                     -- ^ random number generator
              -> Interpreter a              -- ^ Interpreter of evolutionary process 
-             -> IO ([Double], a)           -- ^ returns the average fitness of every generation and the final champion
+             -> IO ([Double], a, Population a)           -- ^ returns the average fitness of every generation and the final champion
 runEvolution nGens nPop logger evo g = flip evalStateT g . runReaderT (genEvolution nGens nPop logger evo)
 
 

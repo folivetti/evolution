@@ -120,7 +120,7 @@ evo = Reproduce Generational
 main :: IO ()
 main = do
   let g = mkStdGen 42 -- <- getStdGen 
-  (xs, x) <- runEvolution 10 10 (\_ -> return ()) evo g interpret 
+  (xs, x, _) <- runEvolution 10 10 (\_ -> return ()) evo g interpret 
   print x
   pop <- evalStateT (replicateM 100 (testCreateMoo >>= calcFitnessMoo)) g
   mapM_ print pop
