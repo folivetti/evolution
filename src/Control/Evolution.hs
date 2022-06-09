@@ -317,7 +317,7 @@ fastNondominatedSort pop = go [fstFront] dominationList nDoms
 
 crowdingDistance :: Solution a => Population a -> [Int] -> [Int]
 crowdingDistance pop front = map fst                   -- get the indices
-                           $ sortBy (compare `on` snd) -- sort by the crowding distance
+                           $ sortBy (compare `on` (negate.snd)) -- sort by the crowding distance
                            $ zip front (A.elems dists) -- zip the front and its corresponding distances
   where
     n     = length front 
@@ -327,7 +327,7 @@ crowdingDistance pop front = map fst                   -- get the indices
               distMut <- newArray (0, n-1) 0.0   -- mutable array of distances
               forM_ [0 .. nobjs-1] $ \j -> do    -- for each objective j
                 let ixs = sortObjective j fits   -- sort front by objective
-                    window = zip3 ixs (tail ixs) (tail . tail $ ixs) -- window with previou and next index
+                    window = zip3 ixs (tail ixs) (tail . tail $ ixs) -- window with previous and next index
                 forM_ window $ \((prev, mp), (i, mi), (next, mn)) -> do -- for each index inside a window
                     di <- readArray distMut i             -- get the current distance
                     writeArray distMut i (di + (mn - mp)) -- write the updated distance
