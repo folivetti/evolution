@@ -26,6 +26,8 @@ dependencies:
 - random
 - scheduler
 - deepseq
+- containers
+- array
 
 library:
   source-dirs: src

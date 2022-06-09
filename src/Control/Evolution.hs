@@ -4,6 +4,7 @@
 {-# language PolyKinds #-}
 {-# language GADTs #-}
 {-# language StandaloneDeriving #-}
+{-# language TupleSections #-}
 {-|
 Module      : Control.Evolution 
 Description : a generic evolutionary algorithm DSL
@@ -42,7 +43,7 @@ add support to `Eq, Ord` classes by comparing the fitness:
 
 @
 data Bin = Bin { _chromo :: [Bool]
-               , _fit :: Double
+               , _fit :: [Double]
                }
                
 instance Eq Bin where
@@ -197,6 +198,8 @@ module Control.Evolution
   , Evolution(..)
   , EvoCycle(..)
   , Op(..)
+  , fastNondominatedSort
+  , crowdingDistance
   )
   where
 
@@ -208,7 +211,13 @@ import System.Random
 import Data.Monoid                       (Sum(..))
 import Data.Vector                       (Vector(..), (!))
 import qualified Data.Vector             as V
-import Data.List                         (sort)
+import Data.List                         (sort, sortBy, groupBy, (\\))
+import Data.Function                     (on)
+import qualified Data.IntMap.Strict      as M
+import qualified Data.Set      as S
+import Data.Bifunctor (first, second)
+import Data.Array.ST (runSTArray, readArray, newArray, writeArray)
+import qualified Data.Array as A 
 
 -- | A random element is the state monad with StdGen as a state
 type Rnd a        = StateT StdGen IO a
@@ -223,7 +232,7 @@ type Population a = Vector a
 -- The evaluation function is inside the state monad as it may
 -- need to sample some instances to evaluate (i.e., lexicase selection).
 class Ord a => Solution a where
-  _getFitness :: a -> Double
+  _getFitness :: a -> [Double]
   _isFeasible :: a -> Bool
 
 -- | The `Interpreter` data type stores all the necessary functions
@@ -251,6 +260,7 @@ data Reproduction = Generational
                   | ReplaceWorst 
                   | Merge
                   | Probabilistic Selection
+                  | NonDominated
                   deriving (Show, Read)
 
 -- | applies a reproduction algorithm on a list of populations. It returns a random population.
@@ -271,8 +281,66 @@ reproduce (Probabilistic sel) (parents:pops) = V.fromList <$> replicateM nPop (s
   where
     everyone = V.concat (parents:pops)
     nPop     = V.length parents
+reproduce NonDominated ps@(parents:pops) = return $ V.fromList $ map (everyone !) selection
+  where 
+    n          = length parents
+    everyone   = V.concat (parents:pops)
+    fronts     = fastNondominatedSort everyone
+    nComplete  = length . takeWhile (< n) . scanl1 (+) . map length $ fronts
+    selection  = concat $ lastFront : take nComplete fronts
+    lastFront  = crowdingDistance everyone $ fronts !! nComplete
+
 reproduce _ [] = error "reproduction must be applied to nonempty population"
 reproduce r _  = error $ "unsupported reproduction: " <> show r
+
+fastNondominatedSort :: Solution a => Population a -> [[Int]]
+fastNondominatedSort pop = go [fstFront] dominationList nDoms
+  where
+    (fstFront, nDoms) = first M.keys                   -- returns only the keys of non-dominated and the map of the dominated
+                      $ M.partition (==0) . M.fromList -- partition the list to those non-dominated and dominated
+                      $ map (second length)            -- changes the list to hold the number of dominating individuals 
+                      $ createListWith (≺)             -- creates a list of who dominates each individual
+    dominationList    = M.fromList $ createListWith (≻) 
+    (≻)               = (<) `on` (pop !) -- a ≻ b means a dominates b
+    (≺)               = flip (≻)         -- a ≺ b means a is dominated by b
+    createListWith op = map (\ix -> (ix, filter (op ix) [0 .. V.length pop - 1])) [0 .. V.length pop - 1] -- creates a list of which individuals ix dominates/is dominated by
+
+    go :: [[Int]] -> M.IntMap [Int] -> M.IntMap Int -> [[Int]]
+    go [] _ _      = error "first front is empty"
+    go ([]:fs) _ _ = reverse fs          -- if we generated an empty front, we don't have any more individuals
+    go (f:fs) s n  = go (f':f:fs) s n'   -- creates the next front f' based on last front f, the domination list s, and number of dominations n
+      where
+        (f', n') = first M.keys                 -- update front and number of dominations
+                 $ M.partition (==0) 
+                 $ M.unionsWith (\x _ -> x - 1) (n : map updateList f) -- subtract by 1 as many times as some index appear
+        updateList = M.fromList . map (, 0) . (s M.!) -- creates a list of all indeces that should be updated
+
+crowdingDistance :: Solution a => Population a -> [Int] -> [Int]
+crowdingDistance pop front = map fst                   -- get the indices
+                           $ sortBy (compare `on` snd) -- sort by the crowding distance
+                           $ zip front (A.elems dists) -- zip the front and its corresponding distances
+  where
+    n     = length front 
+    fits  = map (_getFitness . (pop !)) front
+    nobjs = length $ head fits 
+    dists = runSTArray $ do
+              distMut <- newArray (0, n-1) 0.0   -- mutable array of distances
+              forM_ [0 .. nobjs-1] $ \j -> do    -- for each objective j
+                let ixs = sortObjective j fits   -- sort front by objective
+                    window = zip3 ixs (tail ixs) (tail . tail $ ixs) -- window with previou and next index
+                forM_ window $ \((prev, mp), (i, mi), (next, mn)) -> do -- for each index inside a window
+                    di <- readArray distMut i             -- get the current distance
+                    writeArray distMut i (di + (mn - mp)) -- write the updated distance
+                writeArray distMut (fst (head ixs)) (1/0) -- the first and last indices should contain infinity
+                writeArray distMut (fst (last ixs)) (1/0)
+              return distMut
+
+    -- sort front by objectives
+    sortObjective j fits = sortBy (compare `on` snd) 
+                         $ zip [0..length fits-1] 
+                         $ map (!!j) fits
+
+  
 
 sortVec :: (Ord a, Eq a) => Vector a -> Vector a
 sortVec = V.fromList . sort . V.toList
@@ -295,7 +363,7 @@ select (Tournament n) pop = do
   (ix:ixs) <- replicateM n (randomInt (0, V.length pop - 1))
   pure $ foldr (\i p -> min (pop V.! i) p) (pop V.! ix) ixs
 select RouletteWheel pop = do
-  let fits     = V.map _getFitness pop
+  let fits     = V.map (head . _getFitness) pop -- defaults to the first objective 
       tot      = V.sum fits
       normFits = V.map (/tot) fits
       cumsum   = V.scanl1 (+) normFits
@@ -489,10 +557,11 @@ splitGensWithIndex :: Int -> StdGen -> [StdGen]
 splitGensWithIndex n = map fst . take n . iterate (\(g1,g2) -> split g2) . split 
 {-# INLINE splitGensWithIndex #-}
 
+-- average of the first fitness!!!
 avgFit :: Solution a => Vector a -> Double
 avgFit pop = getSum tot / fromIntegral (V.length pop)
   where
-    tot = foldMap (Sum . _getFitness) pop
+    tot = foldMap (Sum . head . _getFitness) pop 
 {-# INLINE avgFit #-}
 
 getBest :: Solution a => a -> Vector a -> a
