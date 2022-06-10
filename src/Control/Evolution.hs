@@ -211,7 +211,7 @@ import System.Random
 import Data.Monoid                       (Sum(..))
 import Data.Vector                       (Vector(..), (!))
 import qualified Data.Vector             as V
-import Data.List                         (sort, sortBy, groupBy, (\\))
+import Data.List                         (sort, sortBy, groupBy, (\\), nubBy)
 import Data.Function                     (on)
 import qualified Data.IntMap.Strict      as M
 import qualified Data.Set      as S
@@ -281,14 +281,17 @@ reproduce (Probabilistic sel) (parents:pops) = V.fromList <$> replicateM nPop (s
   where
     everyone = V.concat (parents:pops)
     nPop     = V.length parents
-reproduce NonDominated ps@(parents:pops) = return $ V.fromList $ map (everyone !) selection
+reproduce NonDominated ps@(parents:pops) | nSel < n  = return (vecNext V.++ V.take (n-nSel) parents) 
+                                         | otherwise = return vecNext 
   where 
     n          = length parents
     everyone   = V.concat (parents:pops)
-    fronts     = fastNondominatedSort everyone
+    fronts     = map (nubBy ((==) `on` (everyone V.!))) $ fastNondominatedSort everyone
     nComplete  = length . takeWhile (< n) . scanl1 (+) . map length $ fronts
     selection  = concat $ lastFront : take nComplete fronts
     lastFront  = crowdingDistance everyone $ fronts !! nComplete
+    nSel       = length selection 
+    vecNext    = V.fromList $ map (everyone !) selection 
 
 reproduce _ [] = error "reproduction must be applied to nonempty population"
 reproduce r _  = error $ "unsupported reproduction: " <> show r
