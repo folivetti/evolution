@@ -281,8 +281,8 @@ reproduce (Probabilistic sel) (parents:pops) = V.fromList <$> replicateM nPop (s
   where
     everyone = V.concat (parents:pops)
     nPop     = V.length parents
-reproduce NonDominated ps@(parents:pops) | nSel < n  = return (vecNext V.++ V.take (n-nSel) everyone) 
-                                         | otherwise = return vecNext 
+reproduce NonDominated ps@(parents:pops) = return vecNext -- | nSel < n  = return (vecNext V.++ V.take (n-nSel) everyone) 
+                                         -- | otherwise = return vecNext 
   where 
     n          = length parents
     everyone   = V.concat (parents:pops)
