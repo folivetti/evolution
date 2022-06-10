@@ -366,7 +366,7 @@ select (Tournament n) pop = do
 select (CrowdingTournament n) pop = do
   (ix:ixs) <- replicateM n (randomInt (0, V.length pop - 1))
   let pop'  = V.fromList (pop V.! ix : map (pop V.!) ixs)
-      (i:_) = crowdingDistance pop' $ concat $ fastNondominatedSort pop'
+      (i:_) = crowdingDistance pop' $ head $ fastNondominatedSort pop'
   pure $ pop' V.! i
 select RouletteWheel pop = do
   let fits     = V.map (head . _getFitness) pop -- defaults to the first objective 
