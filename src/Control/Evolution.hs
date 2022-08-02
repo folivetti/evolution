@@ -211,12 +211,13 @@ import System.Random
 import Data.Monoid                       (Sum(..))
 import Data.Vector                       (Vector(..), (!))
 import qualified Data.Vector             as V
-import Data.List                         (sort, sortBy, groupBy, (\\), nubBy)
+import Data.List                         (sort, sortBy, groupBy, (\\), nubBy, minimumBy)
 import Data.Function                     (on)
 import qualified Data.IntMap.Strict      as M
 import qualified Data.Set      as S
 import Data.Bifunctor (first, second)
 import Data.Array.ST (runSTArray, readArray, newArray, writeArray)
+import Data.Array                        (array)
 import qualified Data.Array as A 
 
 -- | A random element is the state monad with StdGen as a state
@@ -234,6 +235,10 @@ type Population a = Vector a
 class Ord a => Solution a where
   _getFitness :: a -> [Double]
   _isFeasible :: a -> Bool
+  -- _distance should calculate a normalized distance between two solutions
+  _distance :: a -> a -> Double
+  _distance _ _ = 1.0
+
 
 -- | The `Interpreter` data type stores all the necessary functions
 -- for the evolution process. Each of these functions should
@@ -354,7 +359,10 @@ sortVec = V.fromList . sort . V.toList
 data Selection = Tournament Int 
                | CrowdingTournament Int
                | RouletteWheel 
+               | FitShare Double Int -- tournament with fit share
                deriving (Show, Read)
+
+-- Fit-share = fit_i * (1 + m/n_pop), m = sum [ sh(i,j) | j <- [0 .. npop-1], i/=j ]
 
 -- | selects a random individual from the population using the `Selection` strategy.
 -- TODO: some strategies sample a bunch of solutions in a single pass (SUS)
@@ -363,7 +371,15 @@ select :: (Ord a, Solution a) => Selection -> Population a -> Rnd a
 select _ pop | V.null pop = error "empty population in selection"
 select (Tournament n) pop = do
   (ix:ixs) <- replicateM n (randomInt (0, V.length pop - 1))
-  pure $ foldr (\i p -> min (pop V.! i) p) (pop V.! ix) ixs
+  pure $ minimumBy (compare `on` id) $ map (pop V.!) ixs
+-- TODO: rewrite this ugly thing
+select (FitShare sigma n) pop = do
+  (ix:ixs) <- replicateM n (randomInt (0, V.length pop - 1))
+  let nPop = V.length pop
+      distMtx = array ((0,0), (nPop-1, nPop-1)) [( (i,j), if i > j then distMtx A.! (j,i) else _distance (pop V.! i) (pop V.! j)) | i <- [0 .. nPop-1], j <- [0 .. nPop - 1]]
+      sumDist = array (0, nPop-1) [ (i, 1.0 - sum [distMtx A.! (i,j) | j <- [0..nPop-1], i/=j] / fromIntegral nPop) | i <- [0..nPop-1]]
+      minIx = minimumBy (compare `on` (\ix -> (head . _getFitness) (pop V.! ix) * (sumDist A.! ix))) ixs
+  pure $ pop V.! minIx
 select (CrowdingTournament n) pop = do
   (ix:ixs) <- replicateM n (randomInt (0, V.length pop - 1))
   let pop'  = V.fromList (pop V.! ix : map (pop V.!) ixs)
