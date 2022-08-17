@@ -378,7 +378,7 @@ select (FitShare sigma n) pop = do
   let nPop = V.length pop
       distMtx = array ((0,0), (nPop-1, nPop-1)) [( (i,j), if i > j then distMtx A.! (j,i) else _distance (pop V.! i) (pop V.! j)) | i <- [0 .. nPop-1], j <- [0 .. nPop - 1]]
       sumDist = array (0, nPop-1) [ (i, 1.0 - sum [distMtx A.! (i,j) | j <- [0..nPop-1], i/=j] / fromIntegral nPop) | i <- [0..nPop-1]]
-      minIx = minimumBy (compare `on` (\ix -> (head . _getFitness) (pop V.! ix) * (sumDist A.! ix))) ixs
+      minIx = minimumBy (compare `on` (\ix -> (head . _getFitness) (pop V.! ix) * (1 + sumDist A.! ix))) ixs
   pure $ pop V.! minIx
 select (CrowdingTournament n) pop = do
   ixs <- replicateM n (randomInt (0, V.length pop - 1))
