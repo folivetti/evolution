@@ -376,8 +376,8 @@ select (Tournament n) pop = do
 select (FitShare sigma n) pop = do
   ixs <- replicateM n (randomInt (0, V.length pop - 1))
   let nPop = V.length pop
-      distMtx = array ((0,0), (nPop-1, nPop-1)) 
-                      [( (i,j), if i > j then distMtx A.! (j,i) else _distance (pop V.! i) (pop V.! j)) 
+      distMtx = array ((0,0), (nPop-1, nPop-1)) [ ( (i,j), 0.0 ) 
+                      --[( (i,j), if i > j then distMtx A.! (j,i) else _distance (pop V.! i) (pop V.! j)) 
                       | i <- [0 .. nPop-1]
                       , j <- [0 .. nPop - 1]
                       ]
