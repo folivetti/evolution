@@ -371,11 +371,11 @@ select :: (Ord a, Solution a) => Selection -> Population a -> Rnd a
 select _ pop | V.null pop = error "empty population in selection"
 select (Tournament n) pop = do
   ixs <- replicateM n (randomInt (0, V.length pop - 1))
-  liftIO $ print ixs
   pure $ minimumBy (compare `on` id) $ map (pop V.!) ixs
 -- TODO: rewrite this ugly thing
 select (FitShare sigma n) pop = do
   ixs <- replicateM n (randomInt (0, V.length pop - 1))
+  liftIO $ print ixs
   let nPop = V.length pop
       distMtx = array ((0,0), (nPop-1, nPop-1)) [( (i,j), if i > j then distMtx A.! (j,i) else _distance (pop V.! i) (pop V.! j)) | i <- [0 .. nPop-1], j <- [0 .. nPop - 1]]
       sumDist = array (0, nPop-1) [ (i, 1.0 - sum [distMtx A.! (i,j) | j <- [0..nPop-1], i/=j] / fromIntegral nPop) | i <- [0..nPop-1]]
