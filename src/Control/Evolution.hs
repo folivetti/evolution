@@ -381,9 +381,9 @@ select (FitShare sigma n) pop = do
                       | i <- [0 .. nPop-1]
                       , j <- [0 .. nPop-1]
                       ]
-      sumDist = array (0, nPop-1) [ (i, 1.0 - sum [distMtx A.! (i,j) | j <- [0..nPop-1], i/=j] / fromIntegral nPop) | i <- [0..nPop-1]]
+      sumDist = array (0, nPop-1) [ (i, sum [distMtx A.! (i,j) | j <- [0..nPop-1], i/=j] / fromIntegral (nPop - 1)) | i <- [0..nPop-1]]
       minIx = minimumBy (compare `on` (\ix -> (head . _getFitness) (pop V.! ix) * sigma * (1 + sumDist A.! ix))) ixs
-  liftIO $ print distMtx
+  liftIO $ print sumDist
   pure $ pop V.! minIx
 select (CrowdingTournament n) pop = do
   ixs <- replicateM n (randomInt (0, V.length pop - 1))
