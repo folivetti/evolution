@@ -371,7 +371,8 @@ select :: (Ord a, Solution a) => Selection -> Population a -> Rnd a
 select _ pop | V.null pop = error "empty population in selection"
 select (Tournament n) pop = do
   ixs <- replicateM n (randomInt (0, V.length pop - 1))
-  liftIO $ print $ minimumBy (compare `on` (\ix -> pop V.! ix)) ixs
+  let bestIx = minimumBy (compare `on` (pop V.!)) ixs
+  liftIO $ print (bestIx, _getFitness (pop V.! bestIx))
   pure $ minimumBy (compare `on` id) $ map (pop V.!) ixs
 -- TODO: rewrite this ugly thing
 select (FitShare sigma n) pop = do
