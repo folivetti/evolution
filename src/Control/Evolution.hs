@@ -198,6 +198,7 @@ module Control.Evolution
   , Evolution(..)
   , EvoCycle(..)
   , Op(..)
+  , Domination(..)
   , fastNondominatedSort
   , crowdingDistance
   )
@@ -242,6 +243,9 @@ class Ord a => Solution a where
   _distance :: a -> a -> Double
   _distance _ _ = 1.0
 
+class Domination a where
+  (≻) :: a -> a -> Bool
+  (≺) :: a -> a -> Bool
 
 -- | The `Interpreter` data type stores all the necessary functions
 -- for the evolution process. Each of these functions should
@@ -303,7 +307,7 @@ reproduce NonDominated ps@(parents:pops) = do liftIO $ print $ (length everyone,
 reproduce _ [] = error "reproduction must be applied to nonempty population"
 reproduce r _  = error $ "unsupported reproduction: " <> show r
 
-fastNondominatedSort :: Solution a => Population a -> [[Int]]
+fastNondominatedSort :: (Domination a, Solution a) => Population a -> [[Int]]
 fastNondominatedSort pop = traceShow (createListWith (≺) , fstFront, dominationList, nDoms) $ go [fstFront] dominationList nDoms
   where
     (fstFront, nDoms) = first M.keys                   -- returns only the keys of non-dominated and the map of the dominated
@@ -311,8 +315,8 @@ fastNondominatedSort pop = traceShow (createListWith (≺) , fstFront, dominatio
                       $ map (second length)            -- changes the list to hold the number of dominating individuals 
                       $ createListWith (≺)             -- creates a list of who dominates each individual
     dominationList    = M.fromList $ createListWith (≻) 
-    (≻)               = (<) `on` (pop !)  -- a ≻ b means a dominates b
-    (≺)               = (>) `on` (pop !) -- a ≺ b means a is dominated by b
+    --(≻)               = (<) `on` (pop !)  -- a ≻ b means a dominates b
+    --(≺)               = flip (≻) -- a ≺ b means a is dominated by b
     createListWith op = map (\ix -> (ix, filter (\iy -> op ix iy && ix /= iy) [0 .. V.length pop - 1])) [0 .. V.length pop - 1] -- creates a list of which individuals ix dominates/is dominated by
 
     go :: [[Int]] -> M.IntMap [Int] -> M.IntMap Int -> [[Int]]
