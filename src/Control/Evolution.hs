@@ -313,7 +313,7 @@ fastNondominatedSort pop = traceShow (createListWith (≺) , fstFront, dominatio
     dominationList    = M.fromList $ createListWith (≻) 
     (≻)               = (<=) `on` (pop !) -- a ≻ b means a dominates b
     (≺)               = flip (≻)         -- a ≺ b means a is dominated by b
-    createListWith op = map (\ix -> (ix, filter (op ix) [0 .. V.length pop - 1])) [0 .. V.length pop - 1] -- creates a list of which individuals ix dominates/is dominated by
+    createListWith op = map (\ix -> (ix, filter (\iy -> op ix iy && ix /= iy) [0 .. V.length pop - 1])) [0 .. V.length pop - 1] -- creates a list of which individuals ix dominates/is dominated by
 
     go :: [[Int]] -> M.IntMap [Int] -> M.IntMap Int -> [[Int]]
     go [] _ _      = error "first front is empty"
