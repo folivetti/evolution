@@ -219,6 +219,7 @@ import Data.Bifunctor (first, second)
 import Data.Array.ST (runSTArray, readArray, newArray, writeArray)
 import Data.Array                        (array)
 import qualified Data.Array as A 
+import Data.Time.Clock.POSIX ( getPOSIXTime )
 
 -- | A random element is the state monad with StdGen as a state
 type Rnd a        = StateT StdGen IO a
@@ -550,34 +551,44 @@ evalEvo (Reproduce rep evos) pop gs = do
 -- | Generates the evolutionary process to be evaluated using `runEvolution`
 genEvolution :: (Solution a, NFData a)
              => Int 
+             -> Maybe Integer
              -> Int 
              -> (Population a -> IO ()) 
              -> Evolution a 
              -> ReaderT (Interpreter a) (StateT StdGen IO) ([Double], a, Population a)
-genEvolution nGens nPop logger evo = do
+genEvolution nGens maxTime nPop logger evo = do
+  curTime   <- liftIO getPOSIXTime
   createSol <- asks _create
   eval      <- asks _evaluate 
   pop0      <- lift $ V.replicateM nPop (createSol >>= eval)
   g         <- lift get
   liftIO $ logger pop0
-  go nGens pop0 ([avgFit pop0], V.minimum pop0) $ splitGensWithIndex nPop g 
+  go nGens curTime pop0 ([avgFit pop0], V.minimum pop0) $ splitGensWithIndex nPop g
     where
-      go 0 pop (!avgs, !best) gs = return (reverse avgs, best, pop)
-      go n pop (!avgs, !best) gs = do (pop', gs') <- evalEvo evo pop gs
-                                      liftIO $ logger pop'
-                                      let avgs' = force $ avgFit pop' : avgs
-                                          best' = getBest best pop'
-                                      go (n-1) pop' (avgs', best') gs'
+      maxTime' = case maxTime of
+                      Just t  -> fromInteger $ t - 1
+                      Nothing -> fromInteger 100000000
+      go 0 curTime pop (!avgs, !best) gs = return (reverse avgs, best, pop)
+      go n curTime pop (!avgs, !best) gs = do t <- liftIO getPOSIXTime
+                                              if t - curTime < maxTime'
+                                                then do (pop', gs') <- evalEvo evo pop gs
+                                                        liftIO $ logger pop'
+                                                        let avgs' = force $ avgFit pop' : avgs
+                                                            best' = getBest best pop'
+                                                        go (n-1) curTime pop' (avgs', best') gs'
+                                                else go 0 curTime pop (avgs, best) gs
 
 -- | Runs the evolutionary process 
-runEvolution :: (Solution a, NFData a) => Int -- ^ number of generations 
+runEvolution :: (Solution a, NFData a)
+             => Int                        -- ^ number of generations
+             -> Maybe Integer              -- ^ runtime limit
              -> Int                        -- ^ population size
              -> (Population a -> IO ())    -- ^ a logger function to run at every generation 
              -> Evolution a                -- ^ Evolutionary process 
              -> StdGen                     -- ^ random number generator
              -> Interpreter a              -- ^ Interpreter of evolutionary process 
              -> IO ([Double], a, Population a)           -- ^ returns the average fitness of every generation and the final champion
-runEvolution nGens nPop logger evo g = flip evalStateT g . runReaderT (genEvolution nGens nPop logger evo)
+runEvolution nGens maxTime nPop logger evo g = flip evalStateT g . runReaderT (genEvolution nGens maxTime nPop logger evo)
 
 
 splitGensWithIndex :: Int -> StdGen -> [StdGen]
