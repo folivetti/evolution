@@ -308,21 +308,20 @@ reproduce _ [] = error "reproduction must be applied to nonempty population"
 reproduce r _  = error $ "unsupported reproduction: " <> show r
 
 fastNondominatedSort :: (Domination a, Solution a) => Population a -> [[Int]]
-fastNondominatedSort pop = traceShow (dominated , fstFront, dominationList, nDoms) $ go [fstFront] dominationList nDoms
+fastNondominatedSort pop = go [fstFront] dominationList nDoms
   where
+    ixs               = [0 .. V.length pop - 1]
     (fstFront, nDoms) = first M.keys                   -- returns only the keys of non-dominated and the map of the dominated
                       $ M.partition (==0) . M.fromList -- partition the list to those non-dominated and dominated
                       $ map (second length)            -- changes the list to hold the number of dominating individuals 
                       $ dominated             -- creates a list of who dominates each individual
-    dominationList    = M.fromList $ map (\ix -> (ix, filter (\iy -> (pop ! ix) ≻ (pop ! iy)) [0 .. V.length pop - 1])) [0 .. V.length pop - 1]
-    --(≻)               = (<) `on` (pop !)  -- a ≻ b means a dominates b
-    --(≺)               = flip (≻) -- a ≺ b means a is dominated by b
-    dominated = map (\ix -> (ix, filter (\iy -> (pop ! ix) ≺ (pop ! iy)) [0 .. V.length pop - 1])) [0 .. V.length pop - 1] -- creates a list of which individuals ix dominates/is dominated by
+    dominationList    = M.fromList $ map (\ix -> (ix, filter (\iy -> (pop ! ix) ≻ (pop ! iy)) ixs)) ixs
+    dominated = map (\ix -> (ix, filter (\iy -> (pop ! ix) ≺ (pop ! iy)) ixs)) ixs -- creates a list of which individuals ix dominates/is dominated by
 
     go :: [[Int]] -> M.IntMap [Int] -> M.IntMap Int -> [[Int]]
     go [] _ _      = error "first front is empty"
     go ([]:fs) _ _ = reverse fs          -- if we generated an empty front, we don't have any more individuals
-    go (f:fs) s n  = traceShow (">>>", f',n') $ go (f':f:fs) s n'   -- creates the next front f' based on last front f, the domination list s, and number of dominations n
+    go (f:fs) s n  = go (f':f:fs) s n'   -- creates the next front f' based on last front f, the domination list s, and number of dominations n
       where
         (f', n') = first M.keys                 -- update front and number of dominations
                  $ M.partition (==0) 
@@ -330,7 +329,8 @@ fastNondominatedSort pop = traceShow (dominated , fstFront, dominationList, nDom
         updateList = M.fromList . map (, 0) . (s M.!) -- creates a list of all indeces that should be updated
 
 crowdingDistance :: Solution a => Population a -> [Int] -> [Int]
-crowdingDistance pop front = map fst                   -- get the indices
+crowdingDistance pop front = take (length pop)
+                           $ map fst                   -- get the indices
                            $ sortBy (compare `on` (negate.snd)) -- sort by the crowding distance
                            $ zip front (A.elems dists) -- zip the front and its corresponding distances
   where
@@ -577,7 +577,6 @@ genEvolution nGens maxTime nPop logger evo = do
                       Nothing -> fromInteger 100000000
       go 0 curTime pop (!avgs, !best) gs = return (reverse avgs, best, pop)
       go n curTime pop (!avgs, !best) gs = do t <- liftIO getPOSIXTime
-                                              liftIO $ print (length pop)
                                               if t - curTime < maxTime'
                                                 then do (pop', gs') <- evalEvo evo pop gs
                                                         liftIO $ logger pop'
