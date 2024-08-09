@@ -276,7 +276,7 @@ data Reproduction = Generational
                   deriving (Show, Read)
 
 -- | applies a reproduction algorithm on a list of populations. It returns a random population.
-reproduce :: (Ord a, Solution a) => Reproduction -> [Population a] -> Rnd (Population a)
+reproduce :: (Ord a, Solution a, Domination a) => Reproduction -> [Population a] -> Rnd (Population a)
 reproduce Generational [pop] = pure pop
 reproduce Merge pops = pure $ V.concat pops
 reproduce KeepBest pops = pure $ V.take npop $ sortVec $ V.concat pops
@@ -308,16 +308,16 @@ reproduce _ [] = error "reproduction must be applied to nonempty population"
 reproduce r _  = error $ "unsupported reproduction: " <> show r
 
 fastNondominatedSort :: (Domination a, Solution a) => Population a -> [[Int]]
-fastNondominatedSort pop = traceShow (createListWith (≺) , fstFront, dominationList, nDoms) $ go [fstFront] dominationList nDoms
+fastNondominatedSort pop = traceShow (dominated , fstFront, dominationList, nDoms) $ go [fstFront] dominationList nDoms
   where
     (fstFront, nDoms) = first M.keys                   -- returns only the keys of non-dominated and the map of the dominated
                       $ M.partition (==0) . M.fromList -- partition the list to those non-dominated and dominated
                       $ map (second length)            -- changes the list to hold the number of dominating individuals 
-                      $ createListWith (≺)             -- creates a list of who dominates each individual
-    dominationList    = M.fromList $ createListWith (≻) 
+                      $ dominated             -- creates a list of who dominates each individual
+    dominationList    = M.fromList $ map (\ix -> (ix, filter (\iy -> (pop ! ix) ≻ (pop ! iy)) [0 .. V.length pop - 1])) [0 .. V.length pop - 1]
     --(≻)               = (<) `on` (pop !)  -- a ≻ b means a dominates b
     --(≺)               = flip (≻) -- a ≺ b means a is dominated by b
-    createListWith op = map (\ix -> (ix, filter (\iy -> op ix iy && ix /= iy) [0 .. V.length pop - 1])) [0 .. V.length pop - 1] -- creates a list of which individuals ix dominates/is dominated by
+    dominated = map (\ix -> (ix, filter (\iy -> (pop ! ix) ≺ (pop ! iy)) [0 .. V.length pop - 1])) [0 .. V.length pop - 1] -- creates a list of which individuals ix dominates/is dominated by
 
     go :: [[Int]] -> M.IntMap [Int] -> M.IntMap Int -> [[Int]]
     go [] _ _      = error "first front is empty"
@@ -375,7 +375,7 @@ data Selection = Tournament Int
 -- | selects a random individual from the population using the `Selection` strategy.
 -- TODO: some strategies sample a bunch of solutions in a single pass (SUS)
 -- this would require a modification on how selection is applied.
-select :: (Ord a, Solution a) => Selection -> Population a -> Rnd a
+select :: (Ord a, Solution a, Domination a) => Selection -> Population a -> Rnd a
 select _ pop | V.null pop = error "empty population in selection"
 select (Tournament n) pop = do
   ixs <- replicateM n (randomInt (0, V.length pop - 1))
@@ -490,7 +490,7 @@ randomInt rng = state (randomR rng)
 -- Each step involves the immutable population as a context
 -- and an individual as focus.
 -- By the end of the cycle, a single individual will be created.
-evalCycle :: (Solution a, NFData a)
+evalCycle :: (Solution a, NFData a, Domination a)
           => EvoCycle a
           -> Population a
           -> a
@@ -525,7 +525,7 @@ evalCycle (Mutate mut pm :> evo) pop !p = do
 -- reproduction strategy to generate the next population.
 -- Each individual of the new populations are generated in parallel 
 -- using the evolution cycle. 
-evalEvo :: (Solution a, NFData a)
+evalEvo :: (Solution a, NFData a, Domination a)
         => Evolution a 
         -> Population a 
         -> [StdGen]
@@ -556,7 +556,7 @@ evalEvo (Reproduce rep evos) pop gs = do
       runCycle evo conf pop' (ix, g) = force <$> runStateT (runReaderT (evalCycle evo pop' ix) conf) g
 
 -- | Generates the evolutionary process to be evaluated using `runEvolution`
-genEvolution :: (Solution a, NFData a)
+genEvolution :: (Solution a, NFData a, Domination a)
              => Int 
              -> Maybe Integer
              -> Int 
@@ -587,7 +587,7 @@ genEvolution nGens maxTime nPop logger evo = do
                                                 else go 0 curTime pop (avgs, best) gs
 
 -- | Runs the evolutionary process 
-runEvolution :: (Solution a, NFData a)
+runEvolution :: (Solution a, NFData a, Domination a)
              => Int                        -- ^ number of generations
              -> Maybe Integer              -- ^ runtime limit
              -> Int                        -- ^ population size
