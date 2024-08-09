@@ -222,7 +222,6 @@ import Data.Array                        (array)
 import qualified Data.Array as A 
 import Data.Time.Clock.POSIX ( getPOSIXTime )
 import Control.Monad ( replicateM, forM_ )
-import Debug.Trace
 
 -- | A random element is the state monad with StdGen as a state
 type Rnd a        = StateT StdGen IO a
@@ -293,8 +292,7 @@ reproduce (Probabilistic sel) (parents:pops) = V.fromList <$> replicateM nPop (s
   where
     everyone = V.concat (parents:pops)
     nPop     = V.length parents
-reproduce NonDominated ps@(parents:pops) = do liftIO $ print $ (length everyone, fronts)
-                                              return vecNext
+reproduce NonDominated ps@(parents:pops) = return vecNext
   where 
     n          = length parents
     everyone   = V.concat (parents:pops)
