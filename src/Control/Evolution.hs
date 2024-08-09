@@ -571,7 +571,7 @@ genEvolution nGens maxTime nPop logger evo = do
                       Nothing -> fromInteger 100000000
       go 0 curTime pop (!avgs, !best) gs = return (reverse avgs, best, pop)
       go n curTime pop (!avgs, !best) gs = do t <- liftIO getPOSIXTime
-                                              liftIO $ print (t - curTime)
+                                              --liftIO $ print (t - curTime)
                                               if t - curTime < maxTime'
                                                 then do (pop', gs') <- evalEvo evo pop gs
                                                         liftIO $ logger pop'
