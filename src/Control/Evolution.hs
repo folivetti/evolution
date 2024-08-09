@@ -288,12 +288,12 @@ reproduce (Probabilistic sel) (parents:pops) = V.fromList <$> replicateM nPop (s
   where
     everyone = V.concat (parents:pops)
     nPop     = V.length parents
-reproduce NonDominated ps@(parents:pops) = do liftIO $ print $ map length fronts
+reproduce NonDominated ps@(parents:pops) = do liftIO $ print $ (length parents, length pops)
                                               return vecNext
   where 
     n          = length parents
     everyone   = V.concat (parents:pops)
-    fronts     = fastNondominatedSort everyone -- map (nubBy ((==) `on` (everyone V.!))) $
+    fronts     = map (nubBy ((==) `on` (everyone V.!))) $ fastNondominatedSort everyone
     nComplete  = length . takeWhile (< n) . scanl1 (+) . map length $ fronts
     lastFront  = crowdingDistance everyone $ fronts !! nComplete
     selection  = if nComplete >= length fronts then concat fronts else concat $ lastFront : take nComplete fronts
