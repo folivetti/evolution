@@ -304,7 +304,7 @@ reproduce _ [] = error "reproduction must be applied to nonempty population"
 reproduce r _  = error $ "unsupported reproduction: " <> show r
 
 fastNondominatedSort :: Solution a => Population a -> [[Int]]
-fastNondominatedSort pop = traceShow fstFront $ go [fstFront] dominationList nDoms
+fastNondominatedSort pop = traceShow (V.length pop) $ go [fstFront] dominationList nDoms
   where
     (fstFront, nDoms) = first M.keys                   -- returns only the keys of non-dominated and the map of the dominated
                       $ M.partition (==0) . M.fromList -- partition the list to those non-dominated and dominated
