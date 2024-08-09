@@ -293,7 +293,7 @@ reproduce NonDominated ps@(parents:pops) = do liftIO $ print $ map length fronts
   where 
     n          = length parents
     everyone   = V.concat (parents:pops)
-    fronts     = map (nubBy ((==) `on` (everyone V.!))) $ fastNondominatedSort everyone
+    fronts     = fastNondominatedSort everyone -- map (nubBy ((==) `on` (everyone V.!))) $
     nComplete  = length . takeWhile (< n) . scanl1 (+) . map length $ fronts
     lastFront  = crowdingDistance everyone $ fronts !! nComplete
     selection  = if nComplete >= length fronts then concat fronts else concat $ lastFront : take nComplete fronts
