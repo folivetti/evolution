@@ -318,7 +318,7 @@ fastNondominatedSort pop = traceShow (fstFront, dominationList, nDoms) $ go [fst
     go :: [[Int]] -> M.IntMap [Int] -> M.IntMap Int -> [[Int]]
     go [] _ _      = error "first front is empty"
     go ([]:fs) _ _ = reverse fs          -- if we generated an empty front, we don't have any more individuals
-    go (f:fs) s n  = go (f':f:fs) s n'   -- creates the next front f' based on last front f, the domination list s, and number of dominations n
+    go (f:fs) s n  = traceShow (">>>", f',n') $ go (f':f:fs) s n'   -- creates the next front f' based on last front f, the domination list s, and number of dominations n
       where
         (f', n') = first M.keys                 -- update front and number of dominations
                  $ M.partition (==0) 
