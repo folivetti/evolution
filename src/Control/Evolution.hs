@@ -220,6 +220,7 @@ import Data.Array.ST (runSTArray, readArray, newArray, writeArray)
 import Data.Array                        (array)
 import qualified Data.Array as A 
 import Data.Time.Clock.POSIX ( getPOSIXTime )
+import Control.Monad ( replicateM, forM_ )
 
 -- | A random element is the state monad with StdGen as a state
 type Rnd a        = StateT StdGen IO a
